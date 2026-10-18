@@ -539,6 +539,8 @@ pages:
 | width | string | no | |
 | desktop-navigation-width | string | no | |
 | center-vertically | boolean | no | false |
+| page-background | string | no | |
+| global-background | boolean | no | true |
 | hide-desktop-navigation | boolean | no | false |
 | hide-from-navigation | boolean | no | false |
 | key-bind | string | no | |
@@ -598,6 +600,19 @@ Here are the pixel equivalents for each value:
 
 #### `center-vertically`
 When set to `true`, vertically centers the content on the page. Has no effect if the content is taller than the height of the viewport.
+
+#### `page-background`
+A background image for the page. Accepts a URL or a path inside your [`assets-path`](#server) such as `/assets/background.jpg`. The image covers the whole viewport and stays fixed while scrolling.
+
+```yaml
+pages:
+  - name: Home
+    page-background: /assets/background.jpg
+    columns: ...
+```
+
+#### `global-background`
+Whether the `page-background` of this page is also used on every page that doesn't define its own. When `false` it only applies to the page it is set on. If several pages have it enabled, the first one in the config is used.
 
 #### `hide-desktop-navigation`
 Whether to show the navigation links at the top of the page on desktop.

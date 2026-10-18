@@ -7,9 +7,9 @@
 - Fixed Reddit widget returning `403` again by using Reddit's guest token on `oauth.reddit.com`, blocked requests now show a short error pointing to `app-auth`
 - Reddit widget `search` now requires `app-auth` since Reddit no longer allows signed-out searches
 - Reddit widget now falls back to the subreddit's RSS feed when Reddit blocks signed-out requests, points and comment counts are hidden for those posts
-- Logging out with `auto-redirect-oidc` now also ends the session at the OIDC provider and lands on the login page instead of signing you straight back in -> https://github.com/Panonim/dynacat/issues/182
 - Added a `home-assistant` widget showing entity states with toggles for lights, switches, fans and input booleans, using the same default icons as Home Assistant
 - Added a `node-exporter` server type to `server-stats` so hosts running Prometheus node_exporter can be shown without the agent -> https://github.com/Panonim/dynacat/issues/172
+- Added `page-background` and `global-background` page options to set a background image on one page or on every page
 
 # Changes for 3.0.1
 - Updated docs website

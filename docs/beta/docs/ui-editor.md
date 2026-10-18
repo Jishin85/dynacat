@@ -64,6 +64,7 @@ Saving creates the page and takes you straight to it. By default it is written t
 | ------- | ------- |
 | Basics | **Name**, **Icon** and **Slug (URL)**, which is generated from the name when left empty |
 | Layout | **Width**, **Key bind** and **Center vertically** |
+| Background | **Background image** and **Use on all pages** |
 | Navigation | **Hide from navigation**, **Hide desktop navigation**, **Show mobile header** and **Desktop navigation width** |
 
 They map one to one onto the page properties in the config file, see [Pages](configuration.md#pages) for what each one does. Because the name and the slug can change, saving navigates to the page's new address.
