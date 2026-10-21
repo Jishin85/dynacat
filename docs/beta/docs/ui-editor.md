@@ -17,6 +17,7 @@ The pencil only shows up when you are allowed to edit:
 | Setting | Effect |
 | ------- | ------ |
 | [`ENABLE_EDITOR`](docker-options.md#enable_editor) | `false` hides the button everywhere and unregisters the editor API |
+| [`EDITOR_REQUIRE_LOGIN`](docker-options.md#editor_require_login) | `false` lets anonymous visitors edit when authentication is configured |
 | [`allow-editing`](configuration.md#allow-editing) | `false` disables the editor for everyone |
 | [`editing-users`, `editing-groups`](configuration.md#editing-users-editing-groups) | Limit editing to certain users or groups |
 
