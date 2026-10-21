@@ -76,6 +76,7 @@ type application struct {
 	sseClients           map[*sseClient]struct{}
 	DynamicUpdateEnabled bool
 	EditorEnabled        bool
+	EditorRequiresLogin  bool
 	editorMu             sync.Mutex
 
 	apiRateMu       sync.Mutex
@@ -397,6 +398,7 @@ func newApplication(c *config) (*application, error) {
 	}
 
 	app.warnAboutAPIExposure()
+	app.setupEditorLoginRequirement()
 	app.warnAboutEditorExposure()
 
 	config.Theme.CustomCSSFile = app.resolveUserDefinedAssetPath(config.Theme.CustomCSSFile)
