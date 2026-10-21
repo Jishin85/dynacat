@@ -18,6 +18,7 @@
 - Widgets created by `widget editor` can now be split into seperate files 
 - `compact` servers in `server-stats` now show the server name when the widget has more than one server
 - Cross-page search in the `search` widget now includes pages restricted with `allowed-users` or `allowed-groups` for logged in users who can access them -> https://github.com/Panonim/dynacat/issues/198
+- The UI editor is now only available to logged in users when authentication is configured, set `EDITOR_REQUIRE_LOGIN=false` to let anonymous visitors edit
 
 # Changes for 3.0.1
 - Updated docs website

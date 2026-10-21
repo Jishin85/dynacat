@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var editorConfigWarnOnce sync.Once
+var editorConfigWarnOnce, editorLoginNoticeOnce sync.Once
 
 // editorEnabledFromEnv reports whether the web UI editor is available at all.
 func editorEnabledFromEnv() bool {
@@ -27,6 +27,36 @@ func editorEnabledFromEnv() bool {
 		return false
 	}
 	return true
+}
+
+// editorRequiresLoginFromEnv reads EDITOR_REQUIRE_LOGIN, which defaults to true; set reports whether it was given.
+func editorRequiresLoginFromEnv() (required bool, set bool) {
+	v, set := os.LookupEnv("EDITOR_REQUIRE_LOGIN")
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "false", "0", "f", "no", "off":
+		return false, set
+	}
+	return true, set
+}
+
+func (a *application) setupEditorLoginRequirement() {
+	required, set := editorRequiresLoginFromEnv()
+	if !a.EditorEnabled {
+		return
+	}
+	if !a.AnyAuthEnabled() {
+		if set {
+			slog.Warn("EDITOR_REQUIRE_LOGIN is ignored because no authentication is configured")
+		}
+		return
+	}
+
+	a.EditorRequiresLogin = required
+	if !set && strings.TrimPrefix(buildVersion, "v") == "3.0.2" {
+		editorLoginNoticeOnce.Do(func() {
+			slog.Warn("Since 3.0.2 the web UI editor is only available to logged in users, set EDITOR_REQUIRE_LOGIN=false to allow anonymous visitors to edit")
+		})
+	}
 }
 
 func warnAboutIgnoredEditorConfig(c *config) {
@@ -61,7 +91,7 @@ var editorWarnedAboutExposure bool
 
 func (a *application) warnAboutEditorExposure() {
 	warnOnce(
-		a.EditorEnabled && a.Config.Server.AllowEditing && !a.RequiresAuth,
+		a.EditorEnabled && a.Config.Server.AllowEditing && !a.RequiresAuth && !a.EditorRequiresLogin,
 		&editorWarnedAboutExposure,
 		"The web UI editor is enabled without authentication. Anyone who can reach this server can rewrite your config. Set server.allow-editing to false or configure auth.",
 	)
@@ -170,7 +200,7 @@ func (a *application) EditingAllowedForPage(user *authenticatedUser, p *page) bo
 // UserAllowedToEdit reports whether user may use the web UI editor at all (editing-users/editing-groups).
 // Password-based users have no groups, so editing-groups only ever matches OIDC users.
 func (a *application) UserAllowedToEdit(user *authenticatedUser) bool {
-	if !a.EditorEnabled {
+	if !a.EditorEnabled || (a.EditorRequiresLogin && user == nil) {
 		return false
 	}
 	users := a.Config.Server.EditingUsers
