@@ -209,7 +209,6 @@ func newConfigFromYAML(contents []byte) (*config, error) {
 var envVariableNamePattern = regexp.MustCompile(`^[A-Z0-9_]+$`)
 var configVariablePattern = regexp.MustCompile(`(^|.)\$\{(?:([a-zA-Z]+):)?([a-zA-Z0-9_-]+)\}`)
 
-// TODO: don't match against commented out sections
 func parseConfigVariables(contents []byte) ([]byte, error) {
 	return expandConfigVariables(contents, true)
 }
@@ -219,10 +218,32 @@ func parseEnvVariablesOnly(contents []byte) ([]byte, error) {
 	return expandConfigVariables(contents, false)
 }
 
+var yamlBlockScalarPattern = regexp.MustCompile(`(^\s*|[:-]\s+)([&!]\S*\s+)*[|>][-+0-9]*\s*$`)
+
+// Carries an unclosed quoted scalar over to the next line through quote.
+func yamlCommentIndex(line []byte, quote *byte) int {
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case *quote == '"' && c == '\\', *quote == '\'' && c == '\'' && i+1 < len(line) && line[i+1] == '\'':
+			i++
+		case *quote != 0:
+			if c == *quote {
+				*quote = 0
+			}
+		case c == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t'):
+			return i
+		case (c == '"' || c == '\'') && (i == 0 || strings.IndexByte(" \t[{,", line[i-1]) >= 0):
+			*quote = c
+		}
+	}
+	return len(line)
+}
+
 func expandConfigVariables(contents []byte, allowTypedVariables bool) ([]byte, error) {
 	var err error
 
-	replaced := configVariablePattern.ReplaceAllFunc(contents, func(match []byte) []byte {
+	replace := func(match []byte) []byte {
 		if err != nil {
 			return nil
 		}
@@ -258,13 +279,30 @@ func expandConfigVariables(contents []byte, allowTypedVariables bool) ([]byte, e
 		}
 
 		return []byte(prefix + parsedValue)
-	})
+	}
+
+	var replaced bytes.Buffer
+	// Indent of the line opening a block scalar, whose deeper lines are content even when they start with #.
+	blockIndent := -1
+	var quote byte
+	for _, line := range bytes.SplitAfter(contents, []byte("\n")) {
+		indent := len(line) - len(bytes.TrimLeft(line, " "))
+		if blockIndent >= 0 && (len(bytes.TrimSpace(line)) == 0 || indent > blockIndent) {
+			replaced.Write(configVariablePattern.ReplaceAllFunc(line, replace))
+			continue
+		}
+
+		commentStart := yamlCommentIndex(line, &quote)
+		replaced.Write(configVariablePattern.ReplaceAllFunc(line[:commentStart], replace))
+		replaced.Write(line[commentStart:])
+		blockIndent = ternary(quote == 0 && yamlBlockScalarPattern.Match(line[:commentStart]), indent, -1)
+	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	return replaced, nil
+	return replaced.Bytes(), nil
 }
 
 func parseConfigVariableOfType(variableType, variableName string) (string, bool, error) {

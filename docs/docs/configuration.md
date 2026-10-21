@@ -2944,14 +2944,14 @@ Whether to display statistics for the local server or a remote server. Possible 
 The name of the server which will be displayed on the widget. If not provided it will default to the server's hostname.
 
 ###### `compact`
-Whether to use a compact layout that hides system info, swap usage and the CPU 15-minute average.
+Whether to use a compact layout that hides system info, swap usage and the CPU 15-minute average. A single line above the stats still shows a status dot in the theme's positive or negative color (with `unreachable` when the server is down), plus the server's name when the widget has more than one server.
 
 ![](images/server-stats-compact-preview.webp)
 
 ###### `hide-swap`
 Whether to hide the swap usage.
 
-##### Properties for `local` and `node-exporter` servers
+##### Properties for `local`, `remote` and `node-exporter` servers
 | Name | Type | Required | Default |
 | ---- | ---- | -------- | ------- |
 | cpu-temp-sensor | string | no |  |
@@ -2960,7 +2960,7 @@ Whether to hide the swap usage.
 | mountpoints | map\[string\]object | no |  |
 
 ###### `cpu-temp-sensor`
-The name of the sensor to use for the CPU temperature. When not provided the widget will attempt to find the correct one, if it fails to do so the temperature will not be displayed. To view the available sensors you can use the `sensors` command.
+The name of the sensor to use for the CPU temperature. When not provided the widget will attempt to find the correct one, if it fails to do so the temperature will not be displayed. To view the available sensors you can use the `sensors` command. For `remote` servers it is set on the agent instead, using `system.cpu-temp-sensor` in `agent.yml` or the `TEMP_SENSOR` environment variable.
 
 Both the chip name and the `chip/Label` form printed by `sensors` are accepted, as is a bare label. For a chip listed as:
 

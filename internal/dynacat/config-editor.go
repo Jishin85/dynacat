@@ -561,6 +561,10 @@ func mutateColumns(columns *yaml.Node, m editorMutation, docs *editorDocs) error
 		if seq == nil {
 			return errNoIncludeToWriteInto("widget")
 		}
+		if builder, _ := m.Fields["builder"].(string); separateWidgetFilesEnabled() && m.WidgetType == "custom-api" && builder != "" {
+			title, _ := m.Fields["title"].(string)
+			node = docs.splitWidgetFile(docs.ownerOf(seq), node, orDefault(title, "custom-api"))
+		}
 		seq.Content = insertNode(seq.Content, at, node)
 	case "editWidget":
 		if !validIndex(slots, index) {
@@ -765,6 +769,27 @@ func separatePageFilesEnabled() bool {
 	return true
 }
 
+func separateWidgetFilesEnabled() bool {
+	switch os.Getenv("EDITOR_SEPARATE_WIDGET_FILES") {
+	case "true", "1", "t":
+		return true
+	}
+	return false
+}
+
+// Moves a new widget into its own file next to the owning file and returns the include entry pointing at it.
+func (d *editorDocs) splitWidgetFile(ownerPath string, node *yaml.Node, title string) *yaml.Node {
+	dir := filepath.Dir(ownerPath)
+	file := uniquePageFileName(dir, title)
+	d.track(filepath.Join(dir, file), &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{
+		{Kind: yaml.SequenceNode, Content: []*yaml.Node{node}},
+	}})
+
+	include := newMappingNode()
+	addPair(include, "$include", scalarNode(file))
+	return include
+}
+
 // Keeps a new include entry in the sigil the config already uses.
 func pagesIncludeSigil(pages *yaml.Node) string {
 	sigil := "$include"
@@ -918,6 +943,7 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 	}
 
 	originals := map[string][]byte{}
+	created := map[string]bool{}
 	perms := map[string]os.FileMode{}
 
 	for path, candidate := range candidates {
@@ -930,9 +956,11 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 			perms[path] = info.Mode()
 		}
 
-		// Without the original there is nothing to roll back to, so refuse rather than risk truncating.
+		// A file the editor is creating rolls back by removal, any other unreadable original is refused rather than risk truncating.
 		original, err := os.ReadFile(path)
-		if err != nil {
+		if os.IsNotExist(err) {
+			created[path] = true
+		} else if err != nil {
 			return err
 		}
 		originals[path] = original
@@ -941,12 +969,19 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 	var written []string
 	rollback := func() {
 		for _, path := range written {
+			if created[path] {
+				os.Remove(path)
+				continue
+			}
 			os.WriteFile(path, originals[path], perms[path])
 		}
 	}
 
 	for path, candidate := range candidates {
 		if err := os.WriteFile(path, candidate, perms[path]); err != nil {
+			if created[path] {
+				os.Remove(path)
+			}
 			rollback()
 			if isWriteBlockedError(err) {
 				return &editorPermissionError{path, err}
@@ -1050,6 +1085,28 @@ func (d *editorDocs) track(path string, doc *yaml.Node) {
 	if b, err := os.ReadFile(path); err == nil {
 		d.original[path] = b
 	}
+}
+
+// Finds the loaded file whose tree holds the node, since an insertion point can sit in any included file.
+func (d *editorDocs) ownerOf(n *yaml.Node) string {
+	for path, doc := range d.docs {
+		if containsNode(doc, n) {
+			return path
+		}
+	}
+	return d.pagePath
+}
+
+func containsNode(root, n *yaml.Node) bool {
+	if root == n {
+		return true
+	}
+	for _, c := range root.Content {
+		if containsNode(c, n) {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *editorDocs) load(ownerPath, file string) (string, *yaml.Node, error) {
