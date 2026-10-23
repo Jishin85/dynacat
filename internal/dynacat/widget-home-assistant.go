@@ -2,6 +2,7 @@ package dynacat
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,8 +11,11 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 var homeAssistantWidgetTemplate = mustParseTemplate("home-assistant.html", "widget-base.html")
@@ -114,33 +118,21 @@ func (widget *homeAssistantWidget) update(ctx context.Context) {
 
 func (widget *homeAssistantWidget) buildRow(cfg *homeAssistantEntityConfig, state *homeAssistantStateJSON) homeAssistantEntity {
 	domain, _, _ := strings.Cut(cfg.Entity, ".")
-	row := homeAssistantEntity{ID: cfg.Entity, Name: cfg.Title, Icon: cfg.Icon}
-
-	if state == nil {
-		row.State = "Not found"
-		row.Inactive = true
-		if row.Name == "" {
-			row.Name = cfg.Entity
-		}
-		if row.Icon.URL == "" {
-			row.Icon = newCustomIconField(homeAssistantDefaultIcon(domain, "", ""))
-		}
-		row.Icon.prepare(widget.Providers)
-		return row
+	found := state != nil
+	if !found {
+		state = &homeAssistantStateJSON{}
 	}
 
-	if row.Name == "" {
-		row.Name = ternary(state.Attributes.FriendlyName != "", state.Attributes.FriendlyName, cfg.Entity)
-	}
-
+	row := homeAssistantEntity{ID: cfg.Entity, Name: cmp.Or(cfg.Title, state.Attributes.FriendlyName, cfg.Entity), Icon: cfg.Icon}
 	if row.Icon.URL == "" {
-		row.Icon = newCustomIconField(ternary(
-			state.Attributes.Icon != "",
-			state.Attributes.Icon,
-			homeAssistantDefaultIcon(domain, state.Attributes.DeviceClass, state.State),
-		))
+		row.Icon = newCustomIconField(cmp.Or(state.Attributes.Icon, homeAssistantDefaultIcon(domain, state.Attributes.DeviceClass, state.State)))
 	}
 	row.Icon.prepare(widget.Providers)
+
+	if !found {
+		row.State, row.Inactive = "Not found", true
+		return row
+	}
 
 	row.On = state.State == "on"
 	row.Inactive = state.State == "off" || state.State == "unavailable" || state.State == "unknown"
@@ -160,7 +152,8 @@ func homeAssistantStateText(state, unit string) string {
 	}
 
 	state = strings.ReplaceAll(state, "_", " ")
-	return strings.ToUpper(state[:1]) + state[1:]
+	first, size := utf8.DecodeRuneInString(state)
+	return string(unicode.ToUpper(first)) + state[size:]
 }
 
 func homeAssistantDefaultIcon(domain, deviceClass, state string) string {
@@ -199,14 +192,7 @@ func (widget *homeAssistantWidget) handleRequest(w http.ResponseWriter, r *http.
 		return
 	}
 
-	index := -1
-	for i := range widget.Rows {
-		if widget.Rows[i].ID == body.Entity && widget.Rows[i].Toggleable {
-			index = i
-			break
-		}
-	}
-
+	index := slices.IndexFunc(widget.Rows, func(row homeAssistantEntity) bool { return row.ID == body.Entity && row.Toggleable })
 	if index == -1 {
 		http.Error(w, "entity cannot be toggled", http.StatusForbidden)
 		return

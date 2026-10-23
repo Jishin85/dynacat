@@ -78,13 +78,8 @@ func (widget *serverStatsWidget) update(context.Context) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				var info *sysinfo.SystemInfo
-				var err error
-				if serv.Type == "node-exporter" {
-					info, err = fetchNodeExporterInfo(serv)
-				} else {
-					info, err = fetchRemoteServerInfo(serv)
-				}
+				fetch := ternary(serv.Type == "node-exporter", fetchNodeExporterInfo, fetchRemoteServerInfo)
+				info, err := fetch(serv)
 				if err != nil {
 					slog.Warn("Getting remote system info: " + err.Error())
 					serv.IsReachable = false
@@ -187,7 +182,7 @@ func fetchNodeExporterInfo(infoReq *serverStatsRequest) (*sysinfo.SystemInfo, er
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(infoReq.Timeout))
 	defer cancel()
 
-	metricsURL := strings.TrimSuffix(infoReq.URL, "/metrics") + "/metrics"
+	metricsURL := strings.TrimSuffix(strings.TrimRight(infoReq.URL, "/"), "/metrics") + "/metrics"
 	if !infoReq.nodeExporterUnfiltered {
 		query := url.Values{"collect[]": sysinfo.NodeExporterCollectors}
 		metricsURL += "?" + query.Encode()
@@ -208,6 +203,7 @@ func fetchNodeExporterInfo(infoReq *serverStatsRequest) (*sysinfo.SystemInfo, er
 	defer response.Body.Close()
 
 	if response.StatusCode == http.StatusBadRequest && !infoReq.nodeExporterUnfiltered {
+		response.Body.Close()
 		infoReq.nodeExporterUnfiltered = true
 		return fetchNodeExporterInfo(infoReq)
 	}
@@ -216,7 +212,11 @@ func fetchNodeExporterInfo(infoReq *serverStatsRequest) (*sysinfo.SystemInfo, er
 		return nil, fmt.Errorf("unexpected status code %d from %s", response.StatusCode, infoReq.URL)
 	}
 
-	info, errs := sysinfo.ParseNodeExporter(io.LimitReader(response.Body, maxResponseBytes), infoReq.SystemInfoRequest)
+	body := &io.LimitedReader{R: response.Body, N: maxResponseBytes}
+	info, errs := sysinfo.ParseNodeExporter(body, infoReq.SystemInfoRequest)
+	if body.N == 0 {
+		return nil, fmt.Errorf("node_exporter response from %s exceeds %d bytes", infoReq.URL, maxResponseBytes)
+	}
 	for i := range errs {
 		slog.Warn("Parsing node_exporter metrics: " + errs[i].Error())
 	}

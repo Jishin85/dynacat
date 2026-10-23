@@ -70,16 +70,20 @@ func (widget *monitorWidget) initialize() error {
 	}
 
 	for i := range widget.Sites {
-		req := widget.Sites[i].SiteStatusRequest
-		if req == nil || req.statusURL() == "" {
-			return fmt.Errorf("site %q: url is required", widget.Sites[i].Title)
+		site := &widget.Sites[i]
+		if site.SiteStatusRequest == nil {
+			site.SiteStatusRequest = &SiteStatusRequest{}
+		}
+		req := site.SiteStatusRequest
+		if !site.Disabled && req.statusURL() == "" {
+			return fmt.Errorf("site %q: url is required", site.Title)
 		}
 		if req.Method == "" {
 			continue
 		}
 		method := strings.ToUpper(req.Method)
 		if !slices.Contains(allowedMonitorMethods, method) {
-			return fmt.Errorf("site %q: invalid method %q, must be one of %v", widget.Sites[i].Title, req.Method, allowedMonitorMethods)
+			return fmt.Errorf("site %q: invalid method %q, must be one of %v", site.Title, req.Method, allowedMonitorMethods)
 		}
 		req.Method = method
 	}
@@ -109,7 +113,7 @@ func (widget *monitorWidget) publishSearchTargets() {
 
 		// URL is only filled in once the site has been checked at least once.
 		url := site.URL
-		if url == "" && site.SiteStatusRequest != nil {
+		if url == "" {
 			url = site.DefaultURL
 		}
 

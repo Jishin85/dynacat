@@ -17,7 +17,7 @@ func parseEnvValue(value string) string {
 			if value[0] == '"' && value[i] == '\\' {
 				i++
 			} else if value[i] == value[0] {
-				return envEscapeReplacer.Replace(value[1:i])
+				return ternary(value[0] == '"', envEscapeReplacer.Replace(value[1:i]), value[1:i])
 			}
 		}
 	}

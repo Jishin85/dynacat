@@ -1,6 +1,5 @@
 import { clamp } from "./utils.js";
 
-/** Keeps .masonry widgets in responsive columns as layouts change. */
 export function setupMasonries() {
     const masonryContainers = document.getElementsByClassName("masonry");
 
@@ -16,7 +15,7 @@ export function setupMasonries() {
         };
 
         let previousColumnsCount = 0;
-        // Re-derive items on each render to handle live updates that replace masonry children and invalidate cached items.
+        // Re-read items on each render since live updates replace the masonry children.
         const collectState = () => {
             const columns = [];
             const loose = [];
@@ -27,7 +26,7 @@ export function setupMasonries() {
 
             // Traverse columns row by row to restore the original round-robin item order.
             const items = [];
-            const rows = columns.length > 0 ? Math.max(...columns.map(c => c.children.length)) : 0;
+            const rows = Math.max(0, ...columns.map(c => c.children.length));
 
             for (let row = 0; row < rows; row++) {
                 for (const column of columns) {
@@ -81,8 +80,7 @@ export function setupMasonries() {
             container._masonryObserver.disconnect();
         }
 
-        // Rebuild synchronously to prevent flashing during live updates.
-        // Skip hidden containers; the observer handles them once visible.
+        // Render synchronously to avoid flashing on live updates, leaving hidden containers to the observer.
         if (container.offsetWidth > 0) {
             render();
         }

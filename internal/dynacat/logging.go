@@ -93,14 +93,7 @@ func levelColor(level slog.Level) string {
 	}
 }
 
-func ansi(enabled bool, code string) string {
-	if enabled {
-		return code
-	}
-	return ""
-}
-
-// Calls the handler directly so LOG_LEVEL cannot hide it. For warnings the user must not miss.
+// Calls the handler directly so LOG_LEVEL cannot hide warnings the user must not miss.
 func printUnsuppressableWarning(message string) {
 	slog.Default().Handler().Handle(context.Background(), slog.NewRecord(time.Now(), slog.LevelWarn, message, 0))
 }
@@ -108,14 +101,14 @@ func printUnsuppressableWarning(message string) {
 func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 	var b strings.Builder
 
-	b.WriteString(ansi(h.color, ansiDim))
+	b.WriteString(ternary(h.color, ansiDim, ""))
 	b.WriteString(r.Time.Format("15:04:05"))
-	b.WriteString(ansi(h.color, ansiReset))
+	b.WriteString(ternary(h.color, ansiReset, ""))
 	b.WriteByte(' ')
 
-	b.WriteString(ansi(h.color, levelColor(r.Level)+ansiBold))
+	b.WriteString(ternary(h.color, levelColor(r.Level)+ansiBold, ""))
 	fmt.Fprintf(&b, "%-5s", r.Level.String())
-	b.WriteString(ansi(h.color, ansiReset))
+	b.WriteString(ternary(h.color, ansiReset, ""))
 	b.WriteByte(' ')
 
 	b.WriteString(r.Message)
@@ -126,10 +119,10 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 			key = h.group + "." + key
 		}
 		b.WriteByte(' ')
-		b.WriteString(ansi(h.color, ansiGray))
+		b.WriteString(ternary(h.color, ansiGray, ""))
 		b.WriteString(key)
 		b.WriteString("=")
-		b.WriteString(ansi(h.color, ansiReset))
+		b.WriteString(ternary(h.color, ansiReset, ""))
 		b.WriteString(redactSecretQueryParams(a.Value.String()))
 	}
 

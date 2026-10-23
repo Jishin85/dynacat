@@ -2,6 +2,7 @@ package sysinfo
 
 import (
 	"bufio"
+	"cmp"
 	"io"
 	"math"
 	"strconv"
@@ -130,12 +131,8 @@ func ParseNodeExporter(r io.Reader, req *SystemInfoRequest) (*SystemInfo, []erro
 
 	info := &SystemInfo{
 		Hostname:    hostname,
-		Platform:    osID,
+		Platform:    cmp.Or(osID, strings.ToLower(sysname)),
 		Mountpoints: []MountpointInfo{},
-	}
-
-	if info.Platform == "" {
-		info.Platform = strings.ToLower(sysname)
 	}
 
 	if bootTime, ok := values["node_boot_time_seconds"]; ok {
@@ -172,10 +169,7 @@ func ParseNodeExporter(r io.Reader, req *SystemInfoRequest) (*SystemInfo, []erro
 	if len(temps) > 0 {
 		readings := make([]sensors.TemperatureStat, len(temps))
 		for i, t := range temps {
-			key := chipNames[t.chip]
-			if key == "" {
-				key = t.chip
-			}
+			key := cmp.Or(chipNames[t.chip], t.chip)
 			// Same key format as gopsutil so cpu-temp-sensor matches like on the local server.
 			if label := sensorLabels[t.chip+"/"+t.sensor]; label != "" {
 				key += "_" + strings.Join(strings.Fields(strings.ToLower(label)), "_")

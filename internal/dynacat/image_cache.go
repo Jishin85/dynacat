@@ -197,7 +197,7 @@ func (c *imageCache) isStale(filename string, maxAge time.Duration) bool {
 func (c *imageCache) publicURL(filename string) string {
 	path := "/.cache/" + filename
 	if info, err := os.Stat(filepath.Join(c.dir, filename)); err == nil {
-		path += "?v=" + strconv.FormatInt(info.ModTime().Unix(), 10)
+		path += "?v=" + strconv.FormatInt(info.ModTime().UnixNano(), 10)
 	}
 
 	return c.baseURL + path

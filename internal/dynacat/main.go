@@ -20,7 +20,7 @@ func Main() int {
 		return 1
 	}
 
-	configureLogging(options.background)
+	configureLogging(options.background && options.intent == cliIntentServe)
 
 	if options.envFile != "" {
 		if err := loadEnvFile(options.envFile); err != nil {

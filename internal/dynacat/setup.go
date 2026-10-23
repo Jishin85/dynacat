@@ -127,7 +127,7 @@ func configNeedsFirstRunSetup(path string) bool {
 		return false
 	}
 
-	return cfg.Pages.Kind == 0
+	return len(cfg.Pages.Content) == 0
 }
 
 // Serves setup where the app will listen, so the page can wait for it on the same address.
@@ -140,7 +140,7 @@ func firstRunSetupAddr(path string) string {
 	}
 	cfg.Server.Port = firstRunDefaultPort
 
-	if contents, err := os.ReadFile(path); err == nil {
+	if contents, _, err := parseYAMLIncludes(path); err == nil {
 		if contents, err = parseConfigVariables(contents); err == nil {
 			yaml.Unmarshal(contents, &cfg)
 		}

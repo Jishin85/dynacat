@@ -1116,7 +1116,11 @@ func (a *application) server() (func() error, func() error) {
 
 	stop := func() error {
 		cancelCtx()
-		return server.Close()
+		err := server.Close()
+		if a.todoStorage != nil {
+			a.todoStorage.close()
+		}
+		return err
 	}
 
 	return start, stop

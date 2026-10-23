@@ -1710,7 +1710,8 @@ func orderedFieldKeys(m map[string]any) []string {
 // Keeps restricted editors from changing the background of any other page.
 func restrictBackgroundFields(pageNode *yaml.Node, fields map[string]any) error {
 	delete(fields, "global-background")
-	bg, ok := fields["page-background"].(string)
+	raw, ok := fields["page-background"]
+	bg, _ := raw.(string)
 	current := scalarValue(getMappingValue(pageNode, "page-background"))
 	if !ok || strings.TrimSpace(bg) == current {
 		return nil
