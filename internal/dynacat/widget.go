@@ -96,6 +96,8 @@ func newWidget(widgetType string) (widget, error) {
 		w = &latestMediaWidget{}
 	case "torrenting":
 		w = &torrentingWidget{}
+	case "home-assistant":
+		w = &homeAssistantWidget{}
 	default:
 		return nil, fmt.Errorf("unknown widget type: %s", widgetType)
 	}
@@ -199,6 +201,11 @@ type widgetProviders struct {
 }
 
 func (p *widgetProviders) SecureImageURL(ctx context.Context, imageURL string, allowInsecure bool) string {
+	return p.SecureImageURLWithMaxAge(ctx, imageURL, allowInsecure, 0)
+}
+
+// A maxAge of 0 keeps the cached copy forever.
+func (p *widgetProviders) SecureImageURLWithMaxAge(ctx context.Context, imageURL string, allowInsecure bool, maxAge time.Duration) string {
 	if imageURL == "" {
 		return ""
 	}
@@ -215,7 +222,7 @@ func (p *widgetProviders) SecureImageURL(ctx context.Context, imageURL string, a
 	}
 
 	if p.imageCache != nil {
-		cachedURL, err := p.imageCache.CacheURLWithClient(ctx, imageURL, allowInsecure)
+		cachedURL, err := p.imageCache.CacheURLWithClient(ctx, imageURL, allowInsecure, maxAge)
 		if err == nil && cachedURL != "" {
 			return cachedURL
 		}

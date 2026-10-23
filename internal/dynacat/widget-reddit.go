@@ -91,6 +91,10 @@ func (widget *redditWidget) initialize() error {
 		a.enabled = true
 	}
 
+	if !a.enabled && widget.Search != "" {
+		return errors.New("search requires app-auth, Reddit no longer allows signed-out searches")
+	}
+
 	widget.
 		withTitle("r/" + widget.Subreddit).
 		withTitleURL("https://www.reddit.com/r/" + widget.Subreddit + "/").
@@ -106,6 +110,18 @@ func (widget *redditWidget) initialize() error {
 
 func (widget *redditWidget) update(ctx context.Context) {
 	posts, err := widget.fetchSubredditPosts()
+	fromRSS := false
+
+	// Reddit's RSS feeds still serve signed-out clients when the JSON API blocks them.
+	if err != nil && !widget.AppAuth.enabled {
+		rssPosts, rssErr := widget.fetchSubredditPostsFromRSS()
+		if rssErr != nil {
+			err = fmt.Errorf("%w, rss fallback also failed: %v", err, rssErr)
+		} else {
+			posts, err, fromRSS = rssPosts, nil, true
+		}
+	}
+
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return
 	}
@@ -114,7 +130,7 @@ func (widget *redditWidget) update(ctx context.Context) {
 		posts = posts[:widget.Limit]
 	}
 
-	if widget.ExtraSortBy == "engagement" {
+	if widget.ExtraSortBy == "engagement" && !fromRSS {
 		posts.calculateEngagement()
 		posts.sortByEngagement()
 	}
@@ -193,20 +209,16 @@ func buildRedditRequestURL(baseURL, path string, query url.Values) string {
 func (widget *redditWidget) fetchSubredditPosts() (forumPostList, error) {
 	var client requestDoer = redditHTTPClient
 	var requestPath string
-	var baseURLs []string
 	var headers http.Header
 	query := url.Values{}
 	app := &widget.AppAuth
 
 	if !app.enabled {
-		baseURLs = []string{"https://www.reddit.com", "https://api.reddit.com", "https://old.reddit.com"}
 		headers = http.Header{
 			"User-Agent": []string{getBrowserUserAgentHeader()},
 			"Accept":     []string{"application/json"},
 		}
 	} else {
-		baseURLs = []string{"https://oauth.reddit.com"}
-
 		if app.accessToken == "" || time.Now().Add(time.Minute).After(app.tokenExpiresAt) {
 			if err := widget.fetchNewAppAccessToken(); err != nil {
 				return nil, fmt.Errorf("fetching new app access token: %v", err)
@@ -225,57 +237,51 @@ func (widget *redditWidget) fetchSubredditPosts() (forumPostList, error) {
 	}
 
 	if widget.Search != "" {
-		query.Set("q", widget.Search+" subreddit:"+widget.Subreddit)
+		query.Set("q", widget.Search)
 		query.Set("sort", widget.SortBy)
-		requestPath = "/search.json"
+		query.Set("restrict_sr", "true")
+		requestPath = fmt.Sprintf("/r/%s/search", widget.Subreddit)
 	} else {
 		if widget.SortBy == "top" {
 			query.Set("t", widget.TopPeriod)
 		}
-		requestPath = fmt.Sprintf("/r/%s/%s.json", widget.Subreddit, widget.SortBy)
+		requestPath = fmt.Sprintf("/r/%s/%s", widget.Subreddit, widget.SortBy)
 	}
 
 	if widget.RequestURLTemplate == "" && widget.Proxy.client != nil {
 		client = widget.Proxy.client
 	}
 
-	var responseJson subredditResponseJson
-	var lastErr error
+	// The public .json endpoints are blocked for signed-out clients, so both modes go through oauth.reddit.com.
+	requestURL := buildRedditRequestURL("https://oauth.reddit.com", requestPath, query)
 
-	for _, baseURL := range baseURLs {
-		requestURL := buildRedditRequestURL(baseURL, requestPath, query)
-
-		if widget.RequestURLTemplate != "" {
-			requestURL = strings.ReplaceAll(widget.RequestURLTemplate, "{REQUEST-URL}", requestURL)
-		}
-
-		request, err := http.NewRequest("GET", requestURL, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		request.Header = headers
-
-		if !app.enabled {
-			loid, loidErr := getRedditLoidCookie()
-			if loidErr != nil {
-				lastErr = fmt.Errorf("could not solve reddit challenge: %w", loidErr)
-				continue
-			}
-			request.AddCookie(&http.Cookie{Name: "loid", Value: loid})
-		}
-
-		responseJson, err = decodeJsonFromRequest[subredditResponseJson](client, request)
-		if err == nil {
-			lastErr = nil
-			break
-		}
-
-		lastErr = err
+	if widget.RequestURLTemplate != "" {
+		requestURL = strings.ReplaceAll(widget.RequestURLTemplate, "{REQUEST-URL}", requestURL)
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
+	request, err := http.NewRequest("GET", requestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	request.Header = headers
+
+	// The guest token is only sent to Reddit over HTTPS, never to a request-url-template host.
+	if !app.enabled && request.URL.Scheme == "https" && isRedditHost(request.URL.Hostname()) {
+		token, err := getRedditGuestToken()
+		if err != nil {
+			return nil, fmt.Errorf("could not solve reddit challenge: %w", err)
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	responseJson, err := decodeJsonFromRequest[subredditResponseJson](client, request)
+	if err != nil {
+		// The 403 body is Reddit's full HTML block page, so only the URL is reported.
+		if !app.enabled && strings.Contains(err.Error(), "status code 403") {
+			return nil, fmt.Errorf("reddit blocked the request to %s (403), configure `app-auth` to use the official API", requestURL)
+		}
+		return nil, err
 	}
 
 	if len(responseJson.Data.Children) == 0 {
@@ -337,6 +343,99 @@ func (widget *redditWidget) fetchSubredditPosts() (forumPostList, error) {
 		}
 
 		posts = append(posts, forumPost)
+	}
+
+	return posts, nil
+}
+
+var redditRSSTargetLinkPattern = regexp.MustCompile(`<a href="([^"]+)">\[link\]</a>`)
+
+func (widget *redditWidget) fetchSubredditPostsFromRSS() (forumPostList, error) {
+	query := url.Values{}
+
+	if widget.SortBy == "top" {
+		query.Set("t", widget.TopPeriod)
+	}
+
+	if widget.Limit > 25 {
+		query.Set("limit", strconv.Itoa(widget.Limit))
+	}
+
+	requestURL := buildRedditRequestURL("https://www.reddit.com", fmt.Sprintf("/r/%s/%s/.rss", widget.Subreddit, widget.SortBy), query)
+
+	if widget.RequestURLTemplate != "" {
+		requestURL = strings.ReplaceAll(widget.RequestURLTemplate, "{REQUEST-URL}", requestURL)
+	}
+
+	request, err := http.NewRequest("GET", requestURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	setBrowserUserAgentHeader(request)
+
+	var client requestDoer = redditHTTPClient
+	if widget.RequestURLTemplate == "" && widget.Proxy.client != nil {
+		client = widget.Proxy.client
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d from %s", response.StatusCode, requestURL)
+	}
+
+	feed, err := feedParser.Parse(response.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(feed.Items) == 0 {
+		return nil, fmt.Errorf("no posts found")
+	}
+
+	posts := make(forumPostList, 0, len(feed.Items))
+
+	for _, item := range feed.Items {
+		post := forumPost{
+			Title:         html.UnescapeString(item.Title),
+			Subreddit:     widget.Subreddit,
+			DiscussionUrl: item.Link,
+			StatsUnknown:  true,
+			ThumbnailUrl:  findThumbnailInItemExtensions(item),
+		}
+
+		if len(item.Categories) > 0 {
+			post.Subreddit = item.Categories[0]
+		}
+
+		if item.PublishedParsed != nil {
+			post.TimePosted = *item.PublishedParsed
+		}
+
+		if widget.CommentsURLTemplate != "" {
+			if parsed, err := url.Parse(item.Link); err == nil {
+				post.DiscussionUrl = widget.parseCustomCommentsURL(post.Subreddit, strings.TrimPrefix(item.GUID, "t3_"), parsed.Path)
+			}
+		}
+
+		if matches := redditRSSTargetLinkPattern.FindStringSubmatch(item.Content); matches != nil {
+			target := html.UnescapeString(matches[1])
+			if strings.HasPrefix(target, "/") {
+				target = "https://www.reddit.com" + target
+			}
+
+			if parsed, err := url.Parse(target); err == nil && target != item.Link {
+				post.TargetUrl = target
+				post.TargetUrlDomain = strings.TrimPrefix(parsed.Hostname(), "www.")
+			}
+		}
+
+		posts = append(posts, post)
 	}
 
 	return posts, nil
@@ -404,32 +503,35 @@ var redditHTTPClient = &http.Client{Transport: &http2.Transport{
 var (
 	redditChallengePattern = regexp.MustCompile(`await\(async \w+\s*=>\s*\w+\s*\+\s*\w+\)\("([^"]+)"\)`)
 	redditTokenPattern     = regexp.MustCompile(`name="jsc_token"\s+value="([^"]+)"`)
+	redditOrigRPattern     = regexp.MustCompile(`name="jsc_orig_r"\s+value="([^"]*)"`)
 )
 
-var getRedditLoidCookie = func() func() (string, error) {
+// Guest token is shared by all widgets and lives only in memory, refreshed well before its 24h expiry.
+var getRedditGuestToken = func() func() (string, error) {
 	var lastUpdate time.Time
-	var cachedLoid string
+	var cachedToken string
 
 	return NewSingleflight(func() (string, error) {
-		if time.Since(lastUpdate) < 6*time.Hour && cachedLoid != "" {
-			return cachedLoid, nil
+		if time.Since(lastUpdate) < 6*time.Hour && cachedToken != "" {
+			return cachedToken, nil
 		}
 
-		loid, err := fetchRedditLoidCookie()
+		token, err := fetchRedditGuestToken()
 		if err != nil {
-			if cachedLoid != "" {
-				return cachedLoid, nil
+			if cachedToken != "" {
+				return cachedToken, nil
 			}
 			return "", err
 		}
 
 		lastUpdate = time.Now()
-		cachedLoid = loid
-		return loid, nil
+		cachedToken = token
+		return token, nil
 	})
 }()
 
-func fetchRedditLoidCookie() (string, error) {
+// Solves Reddit's JS challenge, which hands out a token_v2 guest token usable on oauth.reddit.com.
+func fetchRedditGuestToken() (string, error) {
 	request, err := http.NewRequest("GET", "https://www.reddit.com/", nil)
 	if err != nil {
 		return "", err
@@ -472,6 +574,11 @@ func fetchRedditLoidCookie() (string, error) {
 		"js_challenge": {"1"},
 		"jsc_token":    {token},
 	}
+
+	if origRMatches := redditOrigRPattern.FindSubmatch(challengeBody); origRMatches != nil {
+		params.Set("jsc_orig_r", string(origRMatches[1]))
+	}
+
 	request, err = http.NewRequest("GET", "https://www.reddit.com/?"+params.Encode(), nil)
 	if err != nil {
 		return "", err
@@ -490,10 +597,10 @@ func fetchRedditLoidCookie() (string, error) {
 	}
 
 	for _, cookie := range response.Cookies() {
-		if cookie.Name == "loid" {
+		if cookie.Name == "token_v2" && cookie.Value != "" {
 			return cookie.Value, nil
 		}
 	}
 
-	return "", fmt.Errorf("no loid cookie found")
+	return "", fmt.Errorf("no token_v2 cookie found")
 }

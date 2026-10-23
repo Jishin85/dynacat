@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	mathrand "math/rand/v2"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -307,7 +308,8 @@ func (a *application) getAuthenticatedUser(w http.ResponseWriter, r *http.Reques
 		if err == nil && sessionCookie.Value != "" {
 			sess, ok := a.oidcSessions.get(sessionCookie.Value)
 			if ok {
-				if time.Since(sess.CreatedAt) < OIDC_SESSION_VALID_PERIOD {
+				if time.Since(sess.CreatedAt) < OIDC_SESSION_VALID_PERIOD &&
+					oidcUserAllowed(a.Config.Auth.OIDC, sess.Username, sess.Groups) {
 					return &authenticatedUser{
 						Username: sess.Username,
 						Groups:   sess.Groups,
@@ -462,16 +464,61 @@ func (a *application) AnyAuthEnabled() bool {
 func (a *application) handleLogoutRequest(w http.ResponseWriter, r *http.Request) {
 	a.setAuthSessionCookie(w, r, "", time.Now().Add(-1*time.Hour))
 
+	var session *oidcSession
+
 	if a.OIDCEnabled && a.oidcSessions != nil {
 		sessionCookie, err := r.Cookie(OIDC_SESSION_COOKIE_NAME)
 		if err == nil && sessionCookie.Value != "" {
+			session, _ = a.oidcSessions.get(sessionCookie.Value)
 			a.oidcSessions.delete(sessionCookie.Value)
 		}
 	}
 
 	a.clearCookie(w, r, OIDC_SESSION_COOKIE_NAME)
 
-	http.Redirect(w, r, a.Config.Server.BaseURL+"/login", http.StatusSeeOther)
+	if !a.Config.Auth.AutoRedirectOIDC || !a.OIDCEnabled {
+		http.Redirect(w, r, a.Config.Server.BaseURL+"/login", http.StatusSeeOther)
+		return
+	}
+
+	loggedOutURL := a.Config.Server.BaseURL + "/login?logged-out=1"
+	http.Redirect(w, r, orDefault(a.oidcProviderLogoutURL(session, loggedOutURL), loggedOutURL), http.StatusSeeOther)
+}
+
+// Ends the session at the provider too, otherwise auto-redirect-oidc would sign the user straight back in.
+func (a *application) oidcProviderLogoutURL(session *oidcSession, loggedOutPath string) string {
+	if session == nil || session.Token == nil {
+		return ""
+	}
+
+	var discovery struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}
+
+	if err := a.oidcProvider.Claims(&discovery); err != nil || discovery.EndSessionEndpoint == "" {
+		return ""
+	}
+
+	endSessionURL, err := url.Parse(discovery.EndSessionEndpoint)
+	if err != nil {
+		return ""
+	}
+
+	redirectURL, err := url.Parse(a.Config.Auth.OIDC.RedirectURL)
+	if err != nil {
+		return ""
+	}
+
+	query := endSessionURL.Query()
+	query.Set("client_id", a.Config.Auth.OIDC.ClientID)
+	query.Set("post_logout_redirect_uri", redirectURL.Scheme+"://"+redirectURL.Host+loggedOutPath)
+
+	if idToken, ok := session.Token.Extra("id_token").(string); ok && idToken != "" {
+		query.Set("id_token_hint", idToken)
+	}
+
+	endSessionURL.RawQuery = query.Encode()
+	return endSessionURL.String()
 }
 
 func (a *application) setAuthSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
@@ -490,6 +537,12 @@ func (a *application) handleLoginPageRequest(w http.ResponseWriter, r *http.Requ
 	}
 
 	oidcError := r.URL.Query().Get("error")
+
+	// Show the page on OIDC errors so a failing provider can't cause a redirect loop.
+	if a.Config.Auth.AutoRedirectOIDC && a.OIDCEnabled && oidcError == "" && !r.URL.Query().Has("logged-out") {
+		http.Redirect(w, r, a.Config.Server.BaseURL+"/api/oidc/login", http.StatusSeeOther)
+		return
+	}
 
 	data := &templateData{
 		App:       a,

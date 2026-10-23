@@ -21,6 +21,7 @@ type dockerContainersWidget struct {
 	Frameless            bool                         `yaml:"frameless"`
 	HideByDefault        bool                         `yaml:"hide-by-default"`
 	RunningOnly          bool                         `yaml:"running-only"`
+	ShowMissing          bool                         `yaml:"show-missing"`
 	Category             string                       `yaml:"category"`
 	SockPath             string                       `yaml:"sock-path"`
 	FormatContainerNames bool                         `yaml:"format-container-names"`
@@ -53,6 +54,7 @@ func (widget *dockerContainersWidget) update(ctx context.Context) {
 		widget.HideByDefault,
 		widget.Category,
 		widget.RunningOnly,
+		widget.ShowMissing,
 		widget.FormatContainerNames,
 		widget.LabelOverrides,
 	)
@@ -180,7 +182,7 @@ func dockerContainerStateToStateIcon(state string) string {
 		return dockerContainerStateIconOK
 	case "paused":
 		return dockerContainerStateIconPaused
-	case "exited", "unhealthy", "dead":
+	case "exited", "unhealthy", "dead", "missing":
 		return dockerContainerStateIconWarn
 	default:
 		return dockerContainerStateIconOther
@@ -192,10 +194,11 @@ func fetchDockerContainers(
 	hideByDefault bool,
 	category string,
 	runningOnly bool,
+	showMissing bool,
 	formatNames bool,
 	labelOverrides map[string]map[string]string,
 ) (dockerContainerList, error) {
-	containers, err := fetchDockerContainersFromSource(socketPath, category, runningOnly, labelOverrides)
+	containers, err := fetchDockerContainersFromSource(socketPath, category, runningOnly, showMissing, labelOverrides)
 	if err != nil {
 		return nil, fmt.Errorf("fetching containers: %w", err)
 	}
@@ -319,6 +322,7 @@ func fetchDockerContainersFromSource(
 	source string,
 	category string,
 	runningOnly bool,
+	showMissing bool,
 	labelOverrides map[string]map[string]string,
 ) ([]dockerContainerJsonResponse, error) {
 	var hostname string
@@ -372,6 +376,8 @@ func fetchDockerContainersFromSource(
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
+	seen := make(map[string]bool, len(labelOverrides))
+
 	for i := range containers {
 		container := &containers[i]
 		name := strings.TrimLeft(itemAtIndexOrDefault(container.Names, 0, ""), "/")
@@ -384,6 +390,7 @@ func fetchDockerContainersFromSource(
 		if !ok {
 			continue
 		}
+		seen[name] = true
 
 		if container.Labels == nil {
 			container.Labels = make(dockerContainerLabels)
@@ -391,6 +398,26 @@ func fetchDockerContainersFromSource(
 
 		for label, value := range overrides {
 			container.Labels["dynacat."+label] = value
+		}
+	}
+
+	if showMissing && !runningOnly {
+		for name, overrides := range labelOverrides {
+			if seen[name] {
+				continue
+			}
+
+			labels := make(dockerContainerLabels, len(overrides))
+			for label, value := range overrides {
+				labels["dynacat."+label] = value
+			}
+
+			containers = append(containers, dockerContainerJsonResponse{
+				Names:  []string{name},
+				State:  "missing",
+				Status: "missing",
+				Labels: labels,
+			})
 		}
 	}
 

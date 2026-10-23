@@ -551,6 +551,11 @@ function openEditPageModal() {
     layout.append(reg("key-bind", textField("Key bind", opt["key-bind"], "e.g. d h")));
     layout.append(reg("center-vertically", checkField("Center vertically", opt["center-vertically"])));
 
+    const background = div("editor-fields");
+    const bgPlaceholder = page.inheritedBackground ? `Inherited: ${page.inheritedBackground}` : "e.g. /assets/bg.jpg";
+    background.append(reg("page-background", textField("Background image", opt["page-background"], bgPlaceholder)));
+    background.append(reg("global-background", checkField("Use on all pages", opt["global-background"] !== "false")));
+
     const nav = div("editor-fields");
     nav.append(reg("hide-from-navigation", checkField("Hide from navigation", opt["hide-from-navigation"])));
     nav.append(reg("hide-desktop-navigation", checkField("Hide desktop navigation", opt["hide-desktop-navigation"])));
@@ -562,6 +567,7 @@ function openEditPageModal() {
         basic,
         sectionTitle("Layout"),
         layout,
+        collapsible("Background", background),
         collapsible("Navigation", nav),
     ];
 

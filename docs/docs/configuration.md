@@ -539,6 +539,8 @@ pages:
 | width | string | no | |
 | desktop-navigation-width | string | no | |
 | center-vertically | boolean | no | false |
+| page-background | string | no | |
+| global-background | boolean | no | true |
 | hide-desktop-navigation | boolean | no | false |
 | hide-from-navigation | boolean | no | false |
 | key-bind | string | no | |
@@ -598,6 +600,19 @@ Here are the pixel equivalents for each value:
 
 #### `center-vertically`
 When set to `true`, vertically centers the content on the page. Has no effect if the content is taller than the height of the viewport.
+
+#### `page-background`
+A background image for the page. Accepts a URL or a path inside your [`assets-path`](#server) such as `/assets/background.jpg`. The image covers the whole viewport and stays fixed while scrolling.
+
+```yaml
+pages:
+  - name: Home
+    page-background: /assets/background.jpg
+    columns: ...
+```
+
+#### `global-background`
+Whether the `page-background` of this page is also used on every page that doesn't define its own. When `false` it only applies to the page it is set on. If several pages have it enabled, the first one in the config is used.
 
 #### `hide-desktop-navigation`
 Whether to show the navigation links at the top of the page on desktop.
@@ -1493,7 +1508,7 @@ Only required when using AdGuard Home. The username used to log into the admin d
 ##### `password`
 Required when using AdGuard Home, where the password is the one used to log into the admin dashboard.
 
-Also required when using Pi-hole major version 6 and above, where the password is the one used to log into the admin dashboard or the application password, which can be found in `Settings -> Web Interface / API -> Configure app password`.
+For Pi-hole major version 6 and above, required only if you have set a password to log into Pi-hole. You can use the password you use to log into the admin dashboard or the application password, which can be found in `Settings -> Web Interface / API -> Configure app password`.
 
 ##### `token`
 Required when using Pi-hole major version 5 or earlier. The API token which can be found in `Settings -> API -> Show API token`.
@@ -1662,6 +1677,7 @@ If any of the child containers are down, their status will propagate up to the p
 | sock-path | string | no | /var/run/docker.sock |
 | category | string | no | |
 | running-only | boolean | no | false |
+| show-missing | boolean | no | false |
 | update-interval | string | no | 2m |
 
 ##### `hide-by-default`
@@ -1724,6 +1740,9 @@ Then you can use the `category` property to filter the containers:
 
 ##### `running-only`
 Whether to only show running containers. If set to `true` only containers that are currently running will be displayed. If set to `false` all containers will be displayed regardless of their state.
+
+##### `show-missing`
+When set to `true`, containers listed under the `containers` property that the engine doesn't report are still displayed with a `missing` state. Useful for podman quadlets, which remove their container on stop. Has no effect when `running-only` is `true`.
 
 #### Labels
 | Name | Description |
@@ -2387,6 +2406,8 @@ Can be used to specify the order in which the posts should get returned. Possibl
 Available only when `sort-by` is set to `top`. Possible values are `hour`, `day`, `week`, `month`, `year` and `all`.
 
 ##### `search`
+**Due to changes in Reddit's API, `search` works only when `app-auth` is configured.**
+
 Keywords to search for. Searching within specific fields is also possible, **though keep in mind that Reddit may remove the ability to use any of these at any time**:
 
 ![](images/reddit-field-search.png)
@@ -2407,7 +2428,9 @@ widgets:
       secret: ${REDDIT_APP_SECRET}
 ```
 
-To register an app on Reddit, go to [this page](https://ssl.reddit.com/prefs/apps/).
+To register an app on Reddit, go to [this page](https://ssl.reddit.com/prefs/apps/), create a `script` type app and use its name, client ID (shown under the app name) and secret.
+
+This is the most reliable way to use the widget, since requests go through Reddit's official API instead of the public JSON endpoints. If the widget shows `reddit blocked the request`, Reddit is refusing unauthenticated access from your IP and `app-auth` is the recommended fix.
 
 ### Releases
 Display a list of latest releases for specific repositories on Github, GitLab, Codeberg or Docker Hub.
@@ -2782,36 +2805,33 @@ A custom URL must return the [OpenSearch suggestions format](https://github.com/
 > Older configs written with `autocomplete-provider: custom` alongside a separate `autocomplete-url: <url>` still work, but should be migrated to the single-field form above — the `autocomplete-url` property is deprecated and no longer shown in the interactive editor.
 
 ##### `include-bookmarks`
-When set to `true`, matches what you type against the titles of your [bookmarks](#bookmarks) (case-insensitive, matching from the start of the title) and shows matching bookmarks above the regular search suggestions. Clicking a bookmark match navigates straight to its URL instead of performing a search. Up to 3 matches are shown.
+When set to `true`, the titles of [bookmarks](#bookmarks) on the same page are matched as you type and shown above the regular search suggestions. Each word you type has to match the start of a word in the title, ignoring case, so `home dash` finds "Homelab Dashboard". Selecting a match opens its URL instead of running a search.
 
-By default only bookmarks on the same page as the search widget are matched. Use [`cross-page-bookmarks`](#cross-page-bookmarks) to match bookmarks from every page.
-
-Each match shows the bookmark's own [icon](#icons) if it has one, or a small arrow otherwise, exactly like in the bookmarks widget itself.
+Each match shows the bookmark's [icon](#icons), or a small arrow if it has none.
 
 ```yaml
 - type: search
   include-bookmarks: true
 ```
 
-##### `cross-page-bookmarks`
-When set to `true`, implies [`include-bookmarks`](#include-bookmarks) and widens the search to bookmarks on every page, not just the page the search widget is on.
-
-```yaml
-- type: search
-  cross-page-bookmarks: true
-```
-
 ##### `include-docker`
-When set to `true`, matches what you type against the container names from the [docker containers](#docker-containers) widgets on the same page. Only containers with a URL are matched and each match shows the container's [icon](#icons).
-
-##### `cross-page-docker`
-When set to `true`, widens the search to containers from every page.
+Same as [`include-bookmarks`](#include-bookmarks), but for containers from [docker containers](#docker-containers) widgets on the same page. Only containers that have a URL are matched.
 
 ##### `include-monitor`
-When set to `true`, matches what you type against the site titles from the [monitor](#monitor) widgets on the same page. Each match shows the site's [icon](#icons) and points at the same URL as the widget.
+Same as [`include-bookmarks`](#include-bookmarks), but for sites from [monitor](#monitor) widgets on the same page.
+
+Up to 3 matches are shown for each of bookmarks, containers and sites, so one kind can't push the others out.
+
+##### `cross-page-bookmarks`
+When set to `true`, bookmarks from every page are matched instead of only the page the search widget is on. Implies [`include-bookmarks`](#include-bookmarks).
+
+##### `cross-page-docker`
+When set to `true`, containers from every page are matched. Implies [`include-docker`](#include-docker).
 
 ##### `cross-page-monitor`
-When set to `true`, widens the search to sites from every page.
+When set to `true`, sites from every page are matched.
+
+Cross-page search follows page permissions. Results from a page restricted with `allowed-users` or `allowed-groups` are only shown to logged in users who can open that page, so one search widget gives every user their own set of results.
 
 ##### `bangs`
 What now? [Bangs](https://duckduckgo.com/bangs). They're shortcuts that allow you to use the same search box for many different sites. Assuming you have it configured, if for example you start your search input with `!yt` you'd be able to perform a search on YouTube:
@@ -2881,7 +2901,9 @@ Preview:
 >
 > This widget is currently under development, some features might not function as expected or may change.
 
-To display data from a remote server you need to have the Dynacat Agent running on that server. You can download the agent from [here](https://github.com/glanceapp/agent), though keep in mind that it is still in development and may not work as expected. Support for other providers such as Dynacats will be added in the future.
+To display data from a remote server you need to have the Dynacat Agent running on that server. You can download the agent from [here](https://github.com/glanceapp/agent), though keep in mind that it is still in development and may not work as expected.
+
+Servers already running Prometheus [node_exporter](https://github.com/prometheus/node_exporter) can be used directly without installing the agent.
 
 In the event that the CPU temperature goes over 80°C, a flame icon will appear next to the CPU. The progress indicators will also turn red (or the equivalent of your negative color) to hopefully grab your attention if anything is unusually high:
 
@@ -2904,7 +2926,7 @@ Alternatively, set [`HOST_ETC`](docker-options.md#host_etc) if you'd rather bind
 ##### `servers`
 If not provided it will display the statistics of the server Dynacat is running on.
 
-##### Properties for both `local` and `remote` servers
+##### Properties for all servers
 | Name | Type | Required | Default |
 | ---- | ---- | -------- | ------- |
 | type | string | yes |  |
@@ -2913,20 +2935,20 @@ If not provided it will display the statistics of the server Dynacat is running 
 | hide-swap | boolean | no | false |
 
 ###### `type`
-Whether to display statistics for the local server or a remote server. Possible values are `local` and `remote`.
+Whether to display statistics for the local server or a remote server. Possible values are `local`, `remote` (Dynacat Agent) and `node-exporter`.
 
 ###### `name`
 The name of the server which will be displayed on the widget. If not provided it will default to the server's hostname.
 
 ###### `compact`
-Whether to use a compact layout that hides system info, swap usage and the CPU 15-minute average.
+Whether to use a compact layout that hides system info, swap usage and the CPU 15-minute average. A single line above the stats still shows a status dot in the theme's positive or negative color (with `unreachable` when the server is down), plus the server's name when the widget has more than one server.
 
 ![](images/server-stats-compact-preview.webp)
 
 ###### `hide-swap`
 Whether to hide the swap usage.
 
-##### Properties for the `local` server
+##### Properties for `local`, `remote` and `node-exporter` servers
 | Name | Type | Required | Default |
 | ---- | ---- | -------- | ------- |
 | cpu-temp-sensor | string | no |  |
@@ -2935,7 +2957,7 @@ Whether to hide the swap usage.
 | mountpoints | map\[string\]object | no |  |
 
 ###### `cpu-temp-sensor`
-The name of the sensor to use for the CPU temperature. When not provided the widget will attempt to find the correct one, if it fails to do so the temperature will not be displayed. To view the available sensors you can use the `sensors` command.
+The name of the sensor to use for the CPU temperature. When not provided the widget will attempt to find the correct one, if it fails to do so the temperature will not be displayed. To view the available sensors you can use the `sensors` command. For `remote` servers it is set on the agent instead, using `system.cpu-temp-sensor` in `agent.yml` or the `TEMP_SENSOR` environment variable.
 
 Both the chip name and the `chip/Label` form printed by `sensors` are accepted, as is a bare label. For a chip listed as:
 
@@ -2996,7 +3018,7 @@ The name of the mountpoint which will be displayed on the widget. If not provide
 ###### `hide`
 Whether to hide this mountpoint from the widget.
 
-##### Properties for `remote` servers
+##### Properties for `remote` and `node-exporter` servers
 | Name | Type | Required | Default |
 | ---- | ---- | -------- | ------- |
 | url | string | yes |  |
@@ -3004,10 +3026,12 @@ Whether to hide this mountpoint from the widget.
 | timeout | string | no | 3s |
 
 ###### `url`
-The URL and port of the server to fetch the statistics from.
+The URL and port of the server to fetch the statistics from. For `node-exporter` the `/metrics` path is added automatically.
+
+Dynacat only asks node_exporter for the `cpu`, `filesystem`, `hwmon`, `loadavg`, `meminfo`, `os`, `stat` and `uname` collectors, and falls back to the full metrics page if one of them is disabled. Only Linux hosts are supported. `tmpfs` and `ramfs` mountpoints are hidden unless listed under `mountpoints`.
 
 ###### `token`
-The authentication token to use when fetching the statistics.
+The authentication token to use when fetching the statistics, sent as a `Bearer` token.
 
 ###### `timeout`
 The maximum time to wait for a response from the server. The value is a string and must be a number followed by one of s, m, h, d. Example: `10s` for 10 seconds, `1m` for 1 minute, etc
@@ -3653,6 +3677,64 @@ When `true`, hides the user row for each session - both the username and the pla
 **Navidrome:**
 - Uses the Subsonic/OpenSubsonic API (`getNowPlaying`).
 - Set `username` to your Navidrome username and `token` to your Navidrome password.
+
+### Home Assistant
+Display the state of your Home Assistant entities and toggle lights, switches, fans and input booleans.
+
+Example:
+
+```yaml
+- type: home-assistant
+  url: http://homeassistant.local:8123
+  token: ${HOME_ASSISTANT_TOKEN}
+  entities:
+    - entity: light.living_room
+    - entity: switch.coffee_maker
+      title: Coffee
+    - entity: sensor.outside_temperature
+      icon: mdi:sun-thermometer
+```
+
+Preview:
+
+![](images/home-assistant-widget-preview.png)
+
+#### Properties
+
+| Name | Type | Required | Default |
+| ---- | ---- | -------- | ------- |
+| url | string | yes |  |
+| token | string | yes |  |
+| entities | array | yes |  |
+| allow-insecure | boolean | no | false |
+
+##### `url`
+The URL of your Home Assistant instance.
+
+##### `token`
+A long-lived access token. Create one in Home Assistant by opening your profile, going to the `Security` tab and clicking `Create token` under `Long-lived access tokens`.
+
+##### `entities`
+The entities to show, in the order they should appear. Each entity accepts the following properties:
+
+| Name | Type | Required | Default |
+| ---- | ---- | -------- | ------- |
+| entity | string | yes |  |
+| title | string | no | entity's friendly name |
+| icon | string | no | entity's Home Assistant icon |
+
+`entity` is the entity ID, e.g. `light.kitchen`, as shown in Home Assistant under `Settings > Devices & services > Entities`.
+
+When `icon` is not set, the widget uses the icon set on the entity in Home Assistant, otherwise the same default icon Home Assistant uses for that domain, device class and state, e.g. `mdi:lightbulb` and `mdi:lightbulb-off` for lights. Any value from [Icons](#icons) works, so icons copied from Home Assistant (`mdi:...`) can be used as is.
+
+Entities from the `light`, `switch`, `fan` and `input_boolean` domains get a toggle. Sensors show their value with the unit, and an entity that doesn't exist is shown as `Not found` instead of breaking the widget.
+
+> [!WARNING]
+>
+> Anyone who can open the page can use the toggles, so put the page behind [authentication](authentication.md) if Dynacat is reachable by others.
+
+##### `allow-insecure`
+Whether to allow invalid/self-signed certificates when connecting to Home Assistant.
 
 ### Latest Media
 

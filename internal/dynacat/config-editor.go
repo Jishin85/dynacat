@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var editorConfigWarnOnce sync.Once
+var editorConfigWarnOnce, editorLoginNoticeOnce sync.Once
 
 // editorEnabledFromEnv reports whether the web UI editor is available at all.
 func editorEnabledFromEnv() bool {
@@ -27,6 +27,36 @@ func editorEnabledFromEnv() bool {
 		return false
 	}
 	return true
+}
+
+// editorRequiresLoginFromEnv reads EDITOR_REQUIRE_LOGIN, which defaults to true; set reports whether it was given.
+func editorRequiresLoginFromEnv() (required bool, set bool) {
+	v, set := os.LookupEnv("EDITOR_REQUIRE_LOGIN")
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "false", "0", "f", "no", "off":
+		return false, set
+	}
+	return true, set
+}
+
+func (a *application) setupEditorLoginRequirement() {
+	required, set := editorRequiresLoginFromEnv()
+	if !a.EditorEnabled {
+		return
+	}
+	if !a.AnyAuthEnabled() {
+		if set {
+			slog.Warn("EDITOR_REQUIRE_LOGIN is ignored because no authentication is configured")
+		}
+		return
+	}
+
+	a.EditorRequiresLogin = required
+	if !set && strings.TrimPrefix(buildVersion, "v") == "3.0.2" {
+		editorLoginNoticeOnce.Do(func() {
+			slog.Warn("Since 3.0.2 the web UI editor is only available to logged in users, set EDITOR_REQUIRE_LOGIN=false to allow anonymous visitors to edit")
+		})
+	}
 }
 
 func warnAboutIgnoredEditorConfig(c *config) {
@@ -61,7 +91,7 @@ var editorWarnedAboutExposure bool
 
 func (a *application) warnAboutEditorExposure() {
 	warnOnce(
-		a.EditorEnabled && a.Config.Server.AllowEditing && !a.RequiresAuth,
+		a.EditorEnabled && a.Config.Server.AllowEditing && !a.RequiresAuth && !a.EditorRequiresLogin,
 		&editorWarnedAboutExposure,
 		"The web UI editor is enabled without authentication. Anyone who can reach this server can rewrite your config. Set server.allow-editing to false or configure auth.",
 	)
@@ -81,13 +111,14 @@ type editorPresetView struct {
 }
 
 type editorPageView struct {
-	Title    string             `json:"title"`
-	Slug     string             `json:"slug"`
-	Width    string             `json:"width"`
-	File     string             `json:"file"`
-	Writable bool               `json:"writable"`
-	Options  map[string]string  `json:"options"`
-	Columns  []editorColumnView `json:"columns"`
+	Title               string             `json:"title"`
+	Slug                string             `json:"slug"`
+	Width               string             `json:"width"`
+	File                string             `json:"file"`
+	Writable            bool               `json:"writable"`
+	Options             map[string]string  `json:"options"`
+	Columns             []editorColumnView `json:"columns"`
+	InheritedBackground string             `json:"inheritedBackground,omitempty"`
 }
 
 type editorColumnView struct {
@@ -169,7 +200,7 @@ func (a *application) EditingAllowedForPage(user *authenticatedUser, p *page) bo
 // UserAllowedToEdit reports whether user may use the web UI editor at all (editing-users/editing-groups).
 // Password-based users have no groups, so editing-groups only ever matches OIDC users.
 func (a *application) UserAllowedToEdit(user *authenticatedUser) bool {
-	if !a.EditorEnabled {
+	if !a.EditorEnabled || (a.EditorRequiresLogin && user == nil) {
 		return false
 	}
 	users := a.Config.Server.EditingUsers
@@ -268,6 +299,9 @@ func (a *application) buildEditorConfigView(user *authenticatedUser) (editorConf
 		if configPage != nil {
 			pv.Slug = configPage.Slug
 			pv.Title = configPage.Title
+			if configPage.PageBackground == "" {
+				pv.InheritedBackground = a.globalBackground
+			}
 		}
 		view.Pages = append(view.Pages, pv)
 	}
@@ -333,7 +367,12 @@ func pageNodeToView(pageNode *yaml.Node, path string, docs *editorDocs) editorPa
 
 	for i := 0; i+1 < len(pageNode.Content); i += 2 {
 		if v := pageNode.Content[i+1]; v.Kind == yaml.ScalarNode {
-			pv.Options[pageNode.Content[i].Value] = v.Value
+			value := v.Value
+			// The editor compares bools in lowercase.
+			if v.ShortTag() == "!!bool" {
+				value = strings.ToLower(value)
+			}
+			pv.Options[pageNode.Content[i].Value] = value
 		}
 	}
 
@@ -455,6 +494,11 @@ func (a *application) applyEditorMutation(user *authenticatedUser, m editorMutat
 	}
 
 	if m.Op == "editPage" {
+		if len(a.userRestrictEditing(user)) > 0 {
+			if err := restrictBackgroundFields(slot.node, m.Fields); err != nil {
+				return err
+			}
+		}
 		if err := applyPageFields(slot.node, m.Fields); err != nil {
 			return err
 		}
@@ -546,6 +590,10 @@ func mutateColumns(columns *yaml.Node, m editorMutation, docs *editorDocs) error
 		seq, at := widgetInsertPoint(slots, widgets, index)
 		if seq == nil {
 			return errNoIncludeToWriteInto("widget")
+		}
+		if builder, _ := m.Fields["builder"].(string); separateWidgetFilesEnabled() && m.WidgetType == "custom-api" && builder != "" {
+			title, _ := m.Fields["title"].(string)
+			node = docs.splitWidgetFile(docs.ownerOf(seq), node, orDefault(title, "custom-api"))
 		}
 		seq.Content = insertNode(seq.Content, at, node)
 	case "editWidget":
@@ -678,7 +726,8 @@ func applyPageFields(pageNode *yaml.Node, fields map[string]any) error {
 		if k == "name" && isEmptyValue(v) {
 			continue
 		}
-		if isEmptyValue(v) || v == false {
+		// Drop values equal to their default, global-background defaults to true.
+		if isEmptyValue(v) || v == (k == "global-background") {
 			removeMappingKey(pageNode, k)
 			continue
 		}
@@ -748,6 +797,27 @@ func separatePageFilesEnabled() bool {
 		return false
 	}
 	return true
+}
+
+func separateWidgetFilesEnabled() bool {
+	switch os.Getenv("EDITOR_SEPARATE_WIDGET_FILES") {
+	case "true", "1", "t":
+		return true
+	}
+	return false
+}
+
+// Moves a new widget into its own file next to the owning file and returns the include entry pointing at it.
+func (d *editorDocs) splitWidgetFile(ownerPath string, node *yaml.Node, title string) *yaml.Node {
+	dir := filepath.Dir(ownerPath)
+	file := uniquePageFileName(dir, title)
+	d.track(filepath.Join(dir, file), &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{
+		{Kind: yaml.SequenceNode, Content: []*yaml.Node{node}},
+	}})
+
+	include := newMappingNode()
+	addPair(include, "$include", scalarNode(file))
+	return include
 }
 
 // Keeps a new include entry in the sigil the config already uses.
@@ -903,6 +973,7 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 	}
 
 	originals := map[string][]byte{}
+	created := map[string]bool{}
 	perms := map[string]os.FileMode{}
 
 	for path, candidate := range candidates {
@@ -915,9 +986,11 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 			perms[path] = info.Mode()
 		}
 
-		// Without the original there is nothing to roll back to, so refuse rather than risk truncating.
+		// A file the editor is creating rolls back by removal, any other unreadable original is refused rather than risk truncating.
 		original, err := os.ReadFile(path)
-		if err != nil {
+		if os.IsNotExist(err) {
+			created[path] = true
+		} else if err != nil {
 			return err
 		}
 		originals[path] = original
@@ -926,12 +999,19 @@ func (a *application) writeConfigCandidates(candidates map[string][]byte) error 
 	var written []string
 	rollback := func() {
 		for _, path := range written {
+			if created[path] {
+				os.Remove(path)
+				continue
+			}
 			os.WriteFile(path, originals[path], perms[path])
 		}
 	}
 
 	for path, candidate := range candidates {
 		if err := os.WriteFile(path, candidate, perms[path]); err != nil {
+			if created[path] {
+				os.Remove(path)
+			}
 			rollback()
 			if isWriteBlockedError(err) {
 				return &editorPermissionError{path, err}
@@ -1035,6 +1115,28 @@ func (d *editorDocs) track(path string, doc *yaml.Node) {
 	if b, err := os.ReadFile(path); err == nil {
 		d.original[path] = b
 	}
+}
+
+// Finds the loaded file whose tree holds the node, since an insertion point can sit in any included file.
+func (d *editorDocs) ownerOf(n *yaml.Node) string {
+	for path, doc := range d.docs {
+		if containsNode(doc, n) {
+			return path
+		}
+	}
+	return d.pagePath
+}
+
+func containsNode(root, n *yaml.Node) bool {
+	if root == n {
+		return true
+	}
+	for _, c := range root.Content {
+		if containsNode(c, n) {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *editorDocs) load(ownerPath, file string) (string, *yaml.Node, error) {
@@ -1603,6 +1705,30 @@ func orderedFieldKeys(m map[string]any) []string {
 	keys := sortedKeys(m)
 	slices.SortStableFunc(keys, func(a, b string) int { return fieldOrderRank(a) - fieldOrderRank(b) })
 	return keys
+}
+
+// Keeps restricted editors from changing the background of any other page.
+func restrictBackgroundFields(pageNode *yaml.Node, fields map[string]any) error {
+	delete(fields, "global-background")
+	raw, ok := fields["page-background"]
+	bg, _ := raw.(string)
+	current := scalarValue(getMappingValue(pageNode, "page-background"))
+	if !ok || strings.TrimSpace(bg) == current {
+		return nil
+	}
+	if current != "" && pageNodeGlobalBackground(pageNode) {
+		return &editorValidationError{err: errors.New("this background is shared with all pages and can't be changed here"), field: "page-background"}
+	}
+	if !isEmptyValue(bg) {
+		fields["global-background"] = false
+	}
+	return nil
+}
+
+func pageNodeGlobalBackground(pageNode *yaml.Node) bool {
+	var enabled bool
+	n := getMappingValue(pageNode, "global-background")
+	return n == nil || n.Decode(&enabled) != nil || enabled
 }
 
 func isEmptyValue(v any) bool {

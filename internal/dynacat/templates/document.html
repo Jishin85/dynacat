@@ -28,6 +28,7 @@
     <link rel="icon" type="{{ .App.Config.Branding.FaviconType }}" href="{{ .App.Config.Branding.FaviconURL }}" />
     <link rel="stylesheet" href='{{ .App.StaticAssetPath "css/bundle.css" }}'>
     <style id="theme-style">{{ .Request.Theme.CSS }}</style>
+    {{ with .App.BackgroundFor .Page }}<style>body{background-image:url({{ . }});background-size:cover;background-position:center;background-attachment:fixed}</style>{{ end }}
     <script>
     // Restore theme from localStorage before paint when the server cookie was
     // lost or stale, so a reload never drops back to the default theme.

@@ -77,6 +77,7 @@ var widgetTypeCatalog = []widgetTypeMeta{
 	{"playing", "Now Playing", "mdi:play-circle-outline", "configuration/currently-playing"},
 	{"latest-media", "Latest Media", "mdi:multimedia", "configuration/latest-media"},
 	{"torrenting", "Torrenting", "mdi:download-network-outline", "configuration/torrenting"},
+	{"home-assistant", "Home Assistant", "mdi:home-assistant", "configuration/home-assistant"},
 }
 
 type fieldAnnotation struct {
@@ -105,6 +106,7 @@ var requiredFields = map[string][]string{
 	"dns-stats":       {"url"},
 	"dynawidgets":     {"widget"},
 	"extension":       {"url"},
+	"home-assistant":  {"url", "token", "entities", "entities.entity"},
 	"html":            {"source"},
 	"iframe":          {"source"},
 	"latest-media":    {"hosts", "hosts.url", "hosts.token"},
@@ -203,6 +205,11 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	"lobsters": {
 		"sort-by": {Options: []string{"hot", "new"}},
 	},
+	"home-assistant": {
+		"allow-insecure":  {Advanced: true},
+		"token":           {Hint: "A long-lived access token, created in Home Assistant under Profile → Security."},
+		"entities.entity": {Hint: "Entity ID, e.g. light.kitchen."},
+	},
 	"change-detection": {
 		"allow-insecure": {Advanced: true},
 		"token":          {Advanced: true, Hint: "Found in changedetection.io under Settings → API."},
@@ -250,7 +257,8 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 		"widget":         {Hint: "Widget from the dynawidgets repository."},
 	},
 	"docker-containers": {
-		"sock-path": {Advanced: true, Hint: "Defaults to /var/run/docker.sock; can also be a tcp://host:port or http://host:port address."},
+		"sock-path":    {Advanced: true, Hint: "Defaults to /var/run/docker.sock; can also be a tcp://host:port or http://host:port address."},
+		"show-missing": {Hint: "Show containers listed under \"containers\" that the engine doesn't report, e.g. stopped podman quadlets."},
 	},
 	"docker-controller": {
 		"show":      {Options: []string{"both", "containers", "images"}},
@@ -278,7 +286,7 @@ var fieldAnnotations = map[string]map[string]fieldAnnotation{
 	},
 	"server-stats": {
 		"servers":     {Hint: "Leave empty to show stats for the server Dynacat itself is running on."},
-		"servers.url": {Hint: "Address and port of the remote server's Dynacat Agent."},
+		"servers.url": {Hint: "Address and port of the remote server's Dynacat Agent or node_exporter."},
 	},
 }
 

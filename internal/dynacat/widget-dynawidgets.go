@@ -11,13 +11,27 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 const dynawidgetsDefaultRepo = "main"
-const dynawidgetsAssetsDir = "/app/assets/dynawidgets"
+
+// Set on every config load while widgets may be reading it, so it is stored atomically.
+var dynawidgetsAssetsDirPath atomic.Pointer[string]
+
+func dynawidgetsAssetsDir() string {
+	if dir := dynawidgetsAssetsDirPath.Load(); dir != nil {
+		return *dir
+	}
+	return "/app/assets/dynawidgets"
+}
+
+func setDynawidgetsAssetsDir(dir string) {
+	dynawidgetsAssetsDirPath.Store(&dir)
+}
 
 var dynawidgetsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 var dynawidgetsRepoPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
@@ -113,7 +127,7 @@ func (widget *dynawidgetsWidget) initialize() error {
 		}
 	}
 
-	compiledTemplate, err := template.New("").Funcs(customAPITemplateFuncs(nil)).Parse(templateContent)
+	compiledTemplate, err := template.New("").Funcs(customAPITemplateFuncs(nil, 0)).Parse(templateContent)
 	if err != nil {
 		return fmt.Errorf("parsing template: %w", err)
 	}
@@ -185,7 +199,7 @@ func (widget *dynawidgetsWidget) refreshTemplate() {
 		return
 	}
 
-	compiledTemplate, err := template.New("").Funcs(customAPITemplateFuncs(widget.Providers)).Parse(templateContent)
+	compiledTemplate, err := template.New("").Funcs(customAPITemplateFuncs(widget.Providers, 0)).Parse(templateContent)
 	if err != nil {
 		slog.Error("Failed to parse updated dynawidget template", "slug", widget.slug, "error", err)
 		return
@@ -215,7 +229,7 @@ func (widget *dynawidgetsWidget) setProviders(providers *widgetProviders) {
 		return
 	}
 
-	compiledTemplate, err := template.New("").Funcs(customAPITemplateFuncs(providers)).Parse(widget.templateContent)
+	compiledTemplate, err := template.New("").Funcs(customAPITemplateFuncs(providers, 0)).Parse(widget.templateContent)
 	if err != nil {
 		slog.Error("Failed to recompile dynawidget template", "error", err)
 		return
@@ -334,7 +348,7 @@ func dynawidgetsRawTemplate(slug string, repo string) (raw string, title string,
 		return "", "", err
 	}
 
-	if err := os.MkdirAll(dynawidgetsAssetsDir, 0755); err != nil {
+	if err := os.MkdirAll(dynawidgetsAssetsDir(), 0755); err != nil {
 		slog.Error("Failed to create dynawidgets assets directory", "error", err)
 	} else if err := os.WriteFile(templatePath, bodyBytes, 0600); err != nil {
 		slog.Error("Failed to cache dynawidget template", "error", err, "path", templatePath)

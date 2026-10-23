@@ -120,6 +120,29 @@ auth:
     redirect-url: https://dashboard.example.com/api/oidc/callback
 ```
 
+### Skipping the login page
+
+With `disable-password: true` set, you can also skip the Dynacat login page and go straight to your identity provider:
+
+```yaml
+auth:
+  secret-key: ...
+  disable-password: true
+  auto-redirect-oidc: true
+  oidc:
+    ...
+```
+
+If the provider returns an error, the login page is shown instead so you can see what went wrong.
+
+Logging out also ends your session at the provider, if it supports [RP-initiated logout](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) (it advertises an `end_session_endpoint`), and then brings you back to the Dynacat login page instead of redirecting again. For this to work, add the following as an allowed post-logout redirect URI in your provider, using the same origin as your `redirect-url`:
+
+```
+https://dashboard.example.com/login?logged-out=1
+```
+
+If you use `server.base-url`, include it before `/login`. Providers without an `end_session_endpoint` only get logged out of Dynacat, and you land on the login page.
+
 ### Provider guides
 
 #### Generic OIDC

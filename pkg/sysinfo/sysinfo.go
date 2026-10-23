@@ -239,19 +239,8 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 		sensorReadings, err := sensors.SensorsTemperatures()
 		_, errIsWarning := err.(*sensors.Warnings)
 		if err == nil || errIsWarning {
-			if req.CPUTempSensor != "" {
-				if sensor := findTempSensor(sensorReadings, req.CPUTempSensor); sensor != nil {
-					info.CPU.TemperatureIsAvailable = true
-					info.CPU.TemperatureC = uint8(sensor.Temperature)
-				} else {
-					addErr(fmt.Errorf(
-						"CPU temperature sensor %s not found, available sensors: %s",
-						req.CPUTempSensor, strings.Join(sensorKeys(sensorReadings), ", "),
-					))
-				}
-			} else if cpuTempSensor := inferCPUTempSensor(sensorReadings); cpuTempSensor != nil {
-				info.CPU.TemperatureIsAvailable = true
-				info.CPU.TemperatureC = uint8(cpuTempSensor.Temperature)
+			if err := info.applyCPUTemp(sensorReadings, req.CPUTempSensor); err != nil {
+				addErr(err)
 			}
 		} else {
 			addErr(fmt.Errorf("getting sensor readings: %v", err))
@@ -264,11 +253,7 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 			return
 		}
 
-		isHidden := req.HideMountpointsByDefault
-		if mpReq.Hide != nil {
-			isHidden = *mpReq.Hide
-		}
-		if isHidden {
+		if req.isMountpointHidden(mpReq) {
 			return
 		}
 
@@ -322,20 +307,78 @@ func Collect(req *SystemInfoRequest) (*SystemInfo, []error) {
 		addMountpointInfo(mountpoint, mpReq)
 	}
 
+	info.sortMountpoints(req.MountpointOrder)
+
+	return info, errs
+}
+
+func (req *SystemInfoRequest) isMountpointHidden(mpReq MointpointRequest) bool {
+	if mpReq.Hide != nil {
+		return *mpReq.Hide
+	}
+
+	return req.HideMountpointsByDefault
+}
+
+func (info *SystemInfo) ApplyMountpointRequest(req *SystemInfoRequest) {
+	if req == nil {
+		return
+	}
+
+	visible := info.Mountpoints[:0]
+	for _, mp := range info.Mountpoints {
+		mpReq := req.Mountpoints[mp.Path]
+		if req.isMountpointHidden(mpReq) {
+			continue
+		}
+
+		if mpReq.Name != "" {
+			mp.Name = mpReq.Name
+		}
+
+		visible = append(visible, mp)
+	}
+
+	info.Mountpoints = visible
+	info.sortMountpoints(req.MountpointOrder)
+}
+
+func (info *SystemInfo) sortMountpoints(order string) {
 	sort.Slice(info.Mountpoints, func(a, b int) bool {
 		mpA, mpB := info.Mountpoints[a], info.Mountpoints[b]
 
-		switch req.MountpointOrder {
+		switch order {
 		case "name":
 			return mpA.displayName() < mpB.displayName()
 		case "path":
 			return mpA.Path < mpB.Path
 		default:
-			return mpA.UsedPercent > mpB.UsedPercent
+			if mpA.UsedPercent != mpB.UsedPercent {
+				return mpA.UsedPercent > mpB.UsedPercent
+			}
+			return mpA.Path < mpB.Path
 		}
 	})
+}
 
-	return info, errs
+func (info *SystemInfo) applyCPUTemp(readings []sensors.TemperatureStat, wantSensor string) error {
+	var sensor *sensors.TemperatureStat
+
+	if wantSensor != "" {
+		if sensor = findTempSensor(readings, wantSensor); sensor == nil {
+			return fmt.Errorf(
+				"CPU temperature sensor %s not found, available sensors: %s",
+				wantSensor, strings.Join(sensorKeys(readings), ", "),
+			)
+		}
+	} else if sensor = inferCPUTempSensor(readings); sensor == nil {
+		return nil
+	}
+
+	info.CPU.TemperatureIsAvailable = true
+	info.CPU.TemperatureC = uint8(sensor.Temperature)
+
+	return nil
 }
 
 func getZFSUsage(mountpoint string) (totalBytes, usedBytes uint64, err error) {

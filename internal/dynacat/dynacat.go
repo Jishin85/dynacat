@@ -54,6 +54,8 @@ type application struct {
 	widgetToPage  map[uint64]*page
 	searchTargets searchTargetRegistry
 
+	globalBackground string
+
 	RequiresAuth           bool
 	OIDCEnabled            bool
 	PasswordEnabled        bool
@@ -74,6 +76,7 @@ type application struct {
 	sseClients           map[*sseClient]struct{}
 	DynamicUpdateEnabled bool
 	EditorEnabled        bool
+	EditorRequiresLogin  bool
 	editorMu             sync.Mutex
 
 	apiRateMu       sync.Mutex
@@ -167,7 +170,7 @@ func newApplication(c *config) (*application, error) {
 		app.oidcProvider = provider
 		app.oidcVerifier = verifier
 		app.oauth2Config = oauth2Cfg
-		app.oidcSessions = newSessionStore()
+		app.oidcSessions = sharedOIDCSessions
 		app.OIDCEnabled = true
 	}
 
@@ -302,6 +305,11 @@ func newApplication(c *config) (*application, error) {
 
 		app.slugToPage[page.Slug] = page
 
+		page.PageBackground = app.resolveUserDefinedAssetPath(page.PageBackground)
+		if app.globalBackground == "" && page.PageBackground != "" && page.GlobalBackgroundEnabled() {
+			app.globalBackground = page.PageBackground
+		}
+
 		if page.Width == "default" {
 			page.Width = ""
 		}
@@ -390,6 +398,7 @@ func newApplication(c *config) (*application, error) {
 	}
 
 	app.warnAboutAPIExposure()
+	app.setupEditorLoginRequirement()
 	app.warnAboutEditorExposure()
 
 	config.Theme.CustomCSSFile = app.resolveUserDefinedAssetPath(config.Theme.CustomCSSFile)
@@ -425,36 +434,16 @@ func newApplication(c *config) (*application, error) {
 	}
 	app.parsedManifest = []byte(manifest)
 
-	needsTodoDB := false
-	for p := range config.Pages {
-		for _, w := range config.Pages[p].HeadWidgets {
-			if tw, ok := w.(*todoWidget); ok && tw.Storage == "server" {
-				needsTodoDB = true
-				break
-			}
-		}
-		if needsTodoDB {
-			break
-		}
-		for c := range config.Pages[p].Columns {
-			for _, w := range config.Pages[p].Columns[c].Widgets {
-				if tw, ok := w.(*todoWidget); ok && tw.Storage == "server" {
-					needsTodoDB = true
-					break
-				}
-			}
-			if needsTodoDB {
-				break
-			}
-		}
-	}
-
-	if needsTodoDB {
+	if len(app.todoListIDToPage) > 0 {
 		dbPath := config.Server.DBPath
 		if dbPath == "" {
-			dbPath = "/app/assets/dynacat.db"
+			dbPath = filepath.Join(config.assetsPath(), "dynacat.db")
 		}
 		app.todoStorage = newTodoStorage(dbPath)
+
+		if err := app.todoStorage.init(); err != nil {
+			slog.Error("Could not initialize todo database", "path", dbPath, "error", err)
+		}
 	}
 
 	return app, nil
@@ -571,6 +560,14 @@ func (a *application) resolveUserDefinedAssetPath(path string) string {
 	}
 
 	return path
+}
+
+func (a *application) BackgroundFor(p *page) string {
+	if p != nil && p.PageBackground != "" {
+		return p.PageBackground
+	}
+
+	return a.globalBackground
 }
 
 type templateRequestData struct {
@@ -986,6 +983,7 @@ func (a *application) server() (func() error, func() error) {
 	mux.HandleFunc("GET /api/sse/updates", a.handleSSEUpdates)
 	mux.HandleFunc("GET /api/image-proxy/{hash}", a.handleImageProxyRequest)
 	mux.HandleFunc("GET /api/search/autocomplete", a.handleSearchAutocompleteRequest)
+	mux.HandleFunc("GET /api/search/{widget}/targets", a.handleSearchTargetsRequest)
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -1077,10 +1075,7 @@ func (a *application) server() (func() error, func() error) {
 		w.Write(a.parsedManifest)
 	})
 
-	assetsPath := a.Config.Server.AssetsPath
-	if assetsPath == "" {
-		assetsPath = "/app/assets"
-	}
+	assetsPath := a.Config.assetsPath()
 
 	absAssetsPath, _ := filepath.Abs(assetsPath)
 	assetsFS := fileServerWithCache(http.Dir(assetsPath), 2*time.Hour)
@@ -1121,7 +1116,11 @@ func (a *application) server() (func() error, func() error) {
 
 	stop := func() error {
 		cancelCtx()
-		return server.Close()
+		err := server.Close()
+		if a.todoStorage != nil {
+			a.todoStorage.close()
+		}
+		return err
 	}
 
 	return start, stop

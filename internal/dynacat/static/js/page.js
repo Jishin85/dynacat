@@ -373,7 +373,25 @@ function setupSearchBoxes() {
                 icon: el.dataset.icon || "",
                 iconAutoInvert: el.dataset.iconAutoInvert === "true",
             }));
+            if (widget.dataset.restrictedTargetsWidgetId) {
+                const targetKey = (t) => t.kind + "\0" + t.title + "\0" + t.url;
+                fetch(pageData.baseURL + "/api/search/" + encodeURIComponent(widget.dataset.restrictedTargetsWidgetId) + "/targets")
+                    .then((r) => r.ok ? r.json() : [])
+                    .then((data) => {
+                        const known = new Set(targets.map(targetKey));
+                        for (const t of data) {
+                            if (known.has(targetKey(t))) continue;
+                            targets.push({ type: "target", ...t, titleWords: toWords(t.title || "") });
+                        }
+                        const query = inputElement.value.trim();
+                        if (query && query === acQuery) {
+                            renderAC([...matchTargets(query), ...acItems.filter((item) => item.type === "phrase")]);
+                        }
+                    })
+                    .catch(() => {});
+            }
             let acItems = [];
+            let acQuery = "";
             let acIndex = -1;
             let acDebounce = null;
             let acVisible = false;
@@ -525,6 +543,7 @@ function setupSearchBoxes() {
 
             const updateSuggestions = (query, phraseItems) => {
                 if (inputElement.value.trim() !== query) return;
+                acQuery = query;
                 renderAC([...matchTargets(query), ...phraseItems]);
             };
 
@@ -540,7 +559,7 @@ function setupSearchBoxes() {
                 }
 
                 const provider = widget.dataset.autocompleteProvider || "duckduckgo";
-                let suggestionsUrl = "/api/search/autocomplete?q=" + encodeURIComponent(query) + "&provider=" + encodeURIComponent(provider);
+                let suggestionsUrl = pageData.baseURL + "/api/search/autocomplete?q=" + encodeURIComponent(query) + "&provider=" + encodeURIComponent(provider);
                 if (provider === "custom" && widget.dataset.autocompleteWidgetId) {
                     suggestionsUrl += "&widgetId=" + encodeURIComponent(widget.dataset.autocompleteWidgetId);
                 }

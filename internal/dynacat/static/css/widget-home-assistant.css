@@ -1,0 +1,49 @@
+.ha-entity-icon {
+    width: 2.6rem;
+    aspect-ratio: 1 / 1;
+    object-fit: contain;
+    transition: opacity 0.2s;
+}
+
+.ha-entity-inactive .ha-entity-icon {
+    opacity: 0.4;
+}
+
+.ha-toggle {
+    position: relative;
+    width: 3.6rem;
+    height: 2rem;
+    border-radius: 1rem;
+    border: 1px solid var(--color-popover-border);
+    background: var(--color-widget-background-highlight);
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.ha-toggle::after {
+    content: '';
+    position: absolute;
+    top: 0.2rem;
+    left: 0.2rem;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 50%;
+    background: var(--color-text-subdue);
+    transition: transform 0.2s, background-color 0.2s;
+}
+
+.ha-toggle[aria-checked="true"] {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.ha-toggle[aria-checked="true"]::after {
+    transform: translateX(1.6rem);
+    background: var(--color-widget-background);
+}
+
+.ha-toggle:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}

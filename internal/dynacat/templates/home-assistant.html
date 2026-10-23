@@ -1,0 +1,22 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content-classes" }}{{ if .Frameless }}widget-content-frameless{{ end }}{{ end }}
+
+{{- define "widget-content" }}
+<ul class="list list-gap-10">
+    {{- range .Rows }}
+    <li class="ha-entity flex items-center gap-10{{ if .Inactive }} ha-entity-inactive{{ end }}" data-entity="{{ .ID }}">
+        {{- if .Icon.URL }}
+        <img class="ha-entity-icon shrink-0{{ if .Icon.AutoInvert }} flat-icon{{ end }}" src="{{ .Icon.URL }}" alt="" loading="lazy">
+        {{- end }}
+        <div class="min-width-0 grow">
+            <div class="color-highlight text-truncate">{{ .Name }}</div>
+            <div class="ha-entity-state size-h5 color-subdue text-truncate">{{ .State }}</div>
+        </div>
+        {{- if .Toggleable }}
+        <button class="ha-toggle shrink-0" type="button" role="switch" aria-checked="{{ .On }}" aria-label="Toggle {{ .Name }}"></button>
+        {{- end }}
+    </li>
+    {{- end }}
+</ul>
+{{- end }}

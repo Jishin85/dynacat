@@ -62,6 +62,7 @@ The following table lists the default update intervals for widgets when `update-
 | External Integration | Default Update Interval |
 | --- | ---:|
 | Currently Playing | 30s |
+| Home Assistant | 30s |
 | Latest Media | 30m |
 | Torrenting | 30s |
 

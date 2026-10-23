@@ -4,8 +4,26 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
+
+var envInlineCommentPattern = regexp.MustCompile(`\s+#.*$`)
+var envEscapeReplacer = strings.NewReplacer(`\\`, `\`, `\"`, `"`)
+
+func parseEnvValue(value string) string {
+	if value != "" && (value[0] == '"' || value[0] == '\'') {
+		for i := 1; i < len(value); i++ {
+			if value[0] == '"' && value[i] == '\\' {
+				i++
+			} else if value[i] == value[0] {
+				return ternary(value[0] == '"', envEscapeReplacer.Replace(value[1:i]), value[1:i])
+			}
+		}
+	}
+
+	return envInlineCommentPattern.ReplaceAllString(value, "")
+}
 
 func loadEnvFile(path string) error {
 	file, err := os.Open(path)
@@ -39,12 +57,7 @@ func loadEnvFile(path string) error {
 			return fmt.Errorf("env file line %d: empty variable name", lineNum)
 		}
 
-		if len(value) >= 2 {
-			if (value[0] == '"' && value[len(value)-1] == '"') ||
-				(value[0] == '\'' && value[len(value)-1] == '\'') {
-				value = value[1 : len(value)-1]
-			}
-		}
+		value = parseEnvValue(value)
 
 		if err := os.Setenv(key, value); err != nil {
 			return fmt.Errorf("env file line %d: setting %s failed: %w", lineNum, key, err)

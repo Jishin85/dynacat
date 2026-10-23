@@ -2,6 +2,7 @@ package dynacat
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"html/template"
@@ -47,11 +48,12 @@ type config struct {
 	} `yaml:"server"`
 
 	Auth struct {
-		SecretKey       string           `yaml:"secret-key"`
-		RequireAuth     *bool            `yaml:"require-auth"`
-		DisablePassword bool             `yaml:"disable-password"`
-		Users           map[string]*user `yaml:"users"`
-		OIDC            *oidcConfig      `yaml:"oidc"`
+		SecretKey        string           `yaml:"secret-key"`
+		RequireAuth      *bool            `yaml:"require-auth"`
+		DisablePassword  bool             `yaml:"disable-password"`
+		AutoRedirectOIDC bool             `yaml:"auto-redirect-oidc"`
+		Users            map[string]*user `yaml:"users"`
+		OIDC             *oidcConfig      `yaml:"oidc"`
 	} `yaml:"auth"`
 
 	API struct {
@@ -125,6 +127,8 @@ type page struct {
 	CenterVertically       bool            `yaml:"center-vertically"`
 	HideFromNavigation     bool            `yaml:"hide-from-navigation"`
 	KeyBind                string          `yaml:"key-bind"`
+	PageBackground         string          `yaml:"page-background"`
+	GlobalBackground       *bool           `yaml:"global-background"`
 	HeadWidgets            widgets         `yaml:"head-widgets"`
 	Columns                []struct {
 		Size    string  `yaml:"size"`
@@ -140,6 +144,10 @@ func (p *page) DynamicUpdatesEnabled() bool {
 	return p.DynamicUpdates == nil || *p.DynamicUpdates
 }
 
+func (p *page) GlobalBackgroundEnabled() bool {
+	return p.GlobalBackground == nil || *p.GlobalBackground
+}
+
 func (p *page) normalizeKeyBind() {
 	if p.KeyBind == "" {
 		return
@@ -147,6 +155,10 @@ func (p *page) normalizeKeyBind() {
 	if !strings.Contains(p.KeyBind, " ") {
 		p.KeyBind = "d " + p.KeyBind
 	}
+}
+
+func (c *config) assetsPath() string {
+	return cmp.Or(c.Server.AssetsPath, "/app/assets")
 }
 
 func newConfigFromYAML(contents []byte) (*config, error) {
@@ -167,6 +179,9 @@ func newConfigFromYAML(contents []byte) (*config, error) {
 	if err = isConfigStateValid(config); err != nil {
 		return nil, err
 	}
+
+	// Widgets resolve cached templates during initialization, so the directory must be set first.
+	setDynawidgetsAssetsDir(filepath.Join(config.assetsPath(), "dynawidgets"))
 
 	for p := range config.Pages {
 		for w := range config.Pages[p].HeadWidgets {
@@ -192,7 +207,6 @@ func newConfigFromYAML(contents []byte) (*config, error) {
 var envVariableNamePattern = regexp.MustCompile(`^[A-Z0-9_]+$`)
 var configVariablePattern = regexp.MustCompile(`(^|.)\$\{(?:([a-zA-Z]+):)?([a-zA-Z0-9_-]+)\}`)
 
-// TODO: don't match against commented out sections
 func parseConfigVariables(contents []byte) ([]byte, error) {
 	return expandConfigVariables(contents, true)
 }
@@ -202,10 +216,38 @@ func parseEnvVariablesOnly(contents []byte) ([]byte, error) {
 	return expandConfigVariables(contents, false)
 }
 
+var yamlBlockScalarPattern = regexp.MustCompile(`(^\s*|[:-]\s+)([&!]\S*\s+)*[|>][-+0-9]*\s*$`)
+
+// Carries an unclosed quoted scalar over to the next line through quote.
+func yamlCommentIndex(line []byte, quote *byte) int {
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case *quote == '"' && c == '\\', *quote == '\'' && c == '\'' && i+1 < len(line) && line[i+1] == '\'':
+			i++
+		case *quote != 0:
+			if c == *quote {
+				*quote = 0
+			}
+		case c == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t'):
+			return i
+		case (c == '"' || c == '\'') && (i == 0 || strings.IndexByte(" \t[{,", line[i-1]) >= 0) && yamlQuoteOpensScalar(line[:i]):
+			*quote = c
+		}
+	}
+	return len(line)
+}
+
+// A quote only opens a scalar at the start of a value, not mid plain scalar like Rock 'n roll.
+func yamlQuoteOpensScalar(before []byte) bool {
+	before = bytes.TrimRight(before, " \t")
+	return len(before) == 0 || strings.IndexByte(":-[{,", before[len(before)-1]) >= 0
+}
+
 func expandConfigVariables(contents []byte, allowTypedVariables bool) ([]byte, error) {
 	var err error
 
-	replaced := configVariablePattern.ReplaceAllFunc(contents, func(match []byte) []byte {
+	replace := func(match []byte) []byte {
 		if err != nil {
 			return nil
 		}
@@ -241,13 +283,30 @@ func expandConfigVariables(contents []byte, allowTypedVariables bool) ([]byte, e
 		}
 
 		return []byte(prefix + parsedValue)
-	})
+	}
+
+	var replaced bytes.Buffer
+	// Indent of the line opening a block scalar, whose deeper lines are content even when they start with #.
+	blockIndent := -1
+	var quote byte
+	for _, line := range bytes.SplitAfter(contents, []byte("\n")) {
+		indent := len(line) - len(bytes.TrimLeft(line, " "))
+		if blockIndent >= 0 && (len(bytes.TrimSpace(line)) == 0 || indent > blockIndent) {
+			replaced.Write(configVariablePattern.ReplaceAllFunc(line, replace))
+			continue
+		}
+
+		commentStart := yamlCommentIndex(line, &quote)
+		replaced.Write(configVariablePattern.ReplaceAllFunc(line[:commentStart], replace))
+		replaced.Write(line[commentStart:])
+		blockIndent = ternary(quote == 0 && yamlBlockScalarPattern.Match(line[:commentStart]), indent, -1)
+	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	return replaced, nil
+	return replaced.Bytes(), nil
 }
 
 func parseConfigVariableOfType(variableType, variableName string) (string, bool, error) {
@@ -561,6 +620,10 @@ func isConfigStateValid(config *config) error {
 
 	if config.Auth.DisablePassword && config.Auth.OIDC == nil {
 		return fmt.Errorf("disable-password requires oidc to be configured")
+	}
+
+	if config.Auth.AutoRedirectOIDC && !config.Auth.DisablePassword {
+		return fmt.Errorf("auto-redirect-oidc requires disable-password to be true")
 	}
 
 	for username := range config.Auth.Users {

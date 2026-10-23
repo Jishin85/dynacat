@@ -21,6 +21,7 @@ type forumPost struct {
 	TimePosted      time.Time
 	Tags            []string
 	IsCrosspost     bool
+	StatsUnknown    bool
 }
 
 type forumPostList []forumPost
