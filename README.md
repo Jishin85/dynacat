@@ -68,8 +68,8 @@ Easily create your own theme by tweaking a few numbers or choose from one of the
 <br>
 
 ## Installation
-There are currently two ways in which you can use Dynacat, the UI editorand editing yaml files manually.
-If you'd like to use the UI here's the recommended configuration. 
+There are currently two ways to use Dynacat: the UI editor and editing YAML files manually.
+If you'd like to use the UI, here's the recommended configuration. 
 
 The quickest start is to grab the ready-made directory structure:
 
@@ -105,13 +105,17 @@ services:
 ```
 </details>
 
+orr you can just be *that* guy and click here...
+
+<a href="https://github.com/Panonim/dynacat/releases/latest/download/dynacat-windows-amd64-setup.exe"><img alt="Just install button" width="200px" src="docs/docs/images/install_button.svg"></a>
+
 ## Configuration
 There are two ways to configure Dynacat, and they work on the same files:
 
 * **UI editor** - drag widgets into columns, change their options and pick your colors from the dashboard itself. Dynacat writes the result back into your YAML. See the [UI editor documentation](https://dynacat.artur.zone/ui-editor).
 * **YAML by hand** - edit the config files directly. To learn more about how the layout works, how to add more pages and how to configure widgets, visit the [configuration documentation](https://dynacat.artur.zone/configuration#configuring-dynacat).
 
-The editor is an addition to the config file, not a replacement, so hand written config keeps working exactly as before.
+The editor is an addition to the config file, not a replacement, so hand-written config keeps working exactly as before.
 
 <details>
 <summary><strong>Preview example configuration file</strong></summary>
