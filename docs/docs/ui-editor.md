@@ -17,6 +17,7 @@ The pencil only shows up when you are allowed to edit:
 | Setting | Effect |
 | ------- | ------ |
 | [`ENABLE_EDITOR`](docker-options.md#enable_editor) | `false` hides the button everywhere and unregisters the editor API |
+| [`EDITOR_REQUIRE_LOGIN`](docker-options.md#editor_require_login) | `false` lets anonymous visitors edit when authentication is configured |
 | [`allow-editing`](configuration.md#allow-editing) | `false` disables the editor for everyone |
 | [`editing-users`, `editing-groups`](configuration.md#editing-users-editing-groups) | Limit editing to certain users or groups |
 
@@ -64,6 +65,7 @@ Saving creates the page and takes you straight to it. By default it is written t
 | ------- | ------- |
 | Basics | **Name**, **Icon** and **Slug (URL)**, which is generated from the name when left empty |
 | Layout | **Width**, **Key bind** and **Center vertically** |
+| Background | **Background image** and **Use on all pages** |
 | Navigation | **Hide from navigation**, **Hide desktop navigation**, **Show mobile header** and **Desktop navigation width** |
 
 They map one to one onto the page properties in the config file, see [Pages](configuration.md#pages) for what each one does. Because the name and the slug can change, saving navigates to the page's new address.

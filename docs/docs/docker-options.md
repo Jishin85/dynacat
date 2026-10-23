@@ -75,6 +75,17 @@ Editor-specific configuration (`server.allow-editing`, `server.editing-users`, `
 >
 > With the editor disabled, the config file is the only way to change pages. Requests to the editor API return `404` instead of `403`.
 
+### EDITOR_REQUIRE_LOGIN
+
+Only lets logged in users open the page editor, which matters when `auth.require-auth` is `false` and anonymous visitors can view pages. It's on by default, set it to `false`, `0`, `f`, `no`, or `off` to let anonymous visitors edit too:
+
+```yaml
+environment:
+  - EDITOR_REQUIRE_LOGIN=false
+```
+
+It only takes effect when [authentication](authentication.md) is configured, otherwise it is ignored with a startup warning.
+
 ### EDITOR_SEPARATE_PAGE_FILES
 
 Controls where the interactive page editor stores a new page. By default each new page is written to its own file (e.g. `my-page.yml`) in the config directory and linked into the main config with a `$include` line, which keeps multiple pages easy to manage.
@@ -89,6 +100,15 @@ environment:
 > [!NOTE]
 >
 > This only affects pages created after the change. Existing pages, whether inline or included, keep their current location.
+
+### EDITOR_SEPARATE_WIDGET_FILES
+
+Controls where the [Widget Editor](widget-editor.md) stores a new `custom-api` widget. By default it is written inline into the page. Set it to `true`, `1`, or `t` to write each new widget to its own file (e.g. `my-widget.yml`) in the same folder as its page and link it in with a `$include` line:
+
+```yaml
+environment:
+  - EDITOR_SEPARATE_WIDGET_FILES=true
+```
 
 ### HOST_ETC
 
@@ -158,7 +178,9 @@ The global page update interval can be disabled by:
 | -------- | ------- | ----------- |
 | `ENABLE_DYNAMIC_UPDATE` | `true` | Set to `false`, `0`, or `f` to disable automatic widget refresh. Useful for static views or default glance behaviour. |
 | `EDITOR_SEPARATE_PAGE_FILES` | `true` | Set to `false`, `0`, or `f` to write new pages inline into the main config instead of a separate `$include` file. |
+| `EDITOR_SEPARATE_WIDGET_FILES` | `false` | Set to `true`, `1`, or `t` to write new Widget Editor widgets to their own `$include` file next to the page. |
 | `ENABLE_EDITOR` | `true` | Set to `false`, `0`, `f`, `no`, or `off` to disable the page editor everywhere. Editor config keys are ignored with a startup warning. |
+| `EDITOR_REQUIRE_LOGIN` | `true` | Set to `false`, `0`, `f`, `no`, or `off` to let anonymous visitors use the page editor. Only applies when authentication is configured. |
 
 ## ZFS Mountpoint Support
 

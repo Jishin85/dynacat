@@ -1,3 +1,25 @@
+# Changes for 3.0.2
+- Fixed a bug where users were randomly logged out after a config reload -> https://github.com/Panonim/dynacat/issues/174
+- Fixed `secureImageURL` in `custom-api` never refreshing cached images, they are now re-downloaded after the widget `cache` duration -> https://github.com/Panonim/dynacat/issues/176
+- Added support for passwordless Pi-hole v6 instances in `dns-stats` -> https://github.com/Panonim/dynacat/issues/177
+- Added an opt-in `show-missing` option to `docker-containers` to display configured containers the engine no longer reports -> https://github.com/Panonim/dynacat/pull/173
+- Added an opt-in `auto-redirect-oidc` auth option to skip the login page and go straight to the OIDC provider, requires `disable-password: true` -> https://github.com/Panonim/dynacat/issues/182
+- Fixed Reddit widget returning `403` again by using Reddit's guest token on `oauth.reddit.com`, blocked requests now show a short error pointing to `app-auth`
+- Reddit widget `search` now requires `app-auth` since Reddit no longer allows signed-out searches
+- Reddit widget now falls back to the subreddit's RSS feed when Reddit blocks signed-out requests, points and comment counts are hidden for those posts
+- Added a `home-assistant` widget showing entity states with toggles for lights, switches, fans and input booleans, using the same default icons as Home Assistant
+- Added a `node-exporter` server type to `server-stats` so hosts running Prometheus node_exporter can be shown without the agent -> https://github.com/Panonim/dynacat/issues/172
+- Added `page-background` and `global-background` page options to set a background image on one page or on every page
+- Added a Windows installer
+- Fixed a crash in the `monitor` widget when a site has no `url`, it now shows a site-specific error instead -> https://github.com/Panonim/dynacat/issues/192
+- Fixed the database not being created properly on start, which broke the `todo` widget -> https://github.com/Panonim/dynacat/issues/196
+- `mountpoints` and `mountpoint-order` now also apply to `remote` servers in `server-stats`
+- Variables in commented out sections of the config and inline comments in env files are now ignored
+- Widgets created by `widget editor` can now be split into seperate files 
+- `compact` servers in `server-stats` now show the server name when the widget has more than one server
+- Cross-page search in the `search` widget now includes pages restricted with `allowed-users` or `allowed-groups` for logged in users who can access them -> https://github.com/Panonim/dynacat/issues/198
+- The UI editor is now only available to logged in users when authentication is configured, set `EDITOR_REQUIRE_LOGIN=false` to let anonymous visitors edit
+
 # Changes for 3.0.1
 - Updated docs website
 - Fixed a bug where dashless includes would not work in the UI editor
@@ -7,7 +29,6 @@
 - Fixed a bug where qBittorrent wasn't logging in correctly -> https://github.com/Panonim/dynacat/issues/155
 - Fixed `clock` widget blanking after widget updates -> https://github.com/Panonim/dynacat/pull/160
 - Calendar now shows releases on the previous and next month days visible in the grid -> https://github.com/Panonim/dynacat/issues/156
-- Calendar now properly shows upcoming shows -> https://github.com/Panonim/dynacat/issues/156
 - Added a `grid` style to the `bookmarks` widget -> https://github.com/Panonim/dynacat/issues/162
 - Allowed non-root users to use the folders easily -> https://github.com/Panonim/dynacat/issues/165
 - Added .exe support for the releases
