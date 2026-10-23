@@ -28,6 +28,7 @@
             button.setAttribute('aria-checked', state.on ? 'true' : 'false');
             row.classList.toggle('ha-entity-inactive', state.inactive);
             row.querySelector('.ha-entity-state').textContent = state.state;
+            if (!state.toggleable) button.remove();
 
             const icon = row.querySelector('.ha-entity-icon');
             if (icon && state.icon) icon.src = state.icon;

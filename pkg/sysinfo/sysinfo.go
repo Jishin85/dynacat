@@ -353,7 +353,10 @@ func (info *SystemInfo) sortMountpoints(order string) {
 		case "path":
 			return mpA.Path < mpB.Path
 		default:
-			return mpA.UsedPercent > mpB.UsedPercent
+			if mpA.UsedPercent != mpB.UsedPercent {
+				return mpA.UsedPercent > mpB.UsedPercent
+			}
+			return mpA.Path < mpB.Path
 		}
 	})
 }

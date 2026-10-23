@@ -32,7 +32,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -ldflags "-s -w -X github.com/Panonim/dynacat/internal/dynacat.buildVersion=${APP_VERSION}" \
     -o /out/dynacat.exe .
 
-FROM amake/innosetup:sha256:e003376ba818547275fe10c95e2a29be0f2d12d45e9eb8f205b6672dc5685bb1 AS installer
+FROM amake/innosetup@sha256:e003376ba818547275fe10c95e2a29be0f2d12d45e9eb8f205b6672dc5685bb1 AS installer
 
 ARG APP_VERSION=dev
 ARG ARCH=amd64

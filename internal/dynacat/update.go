@@ -29,11 +29,7 @@ func cliUpdate() int {
 		pauseIfOwnConsole()
 	}
 
-	if err != nil {
-		return 1
-	}
-
-	return 0
+	return ternary(err != nil, 1, 0)
 }
 
 func runUpdate() (bool, error) {

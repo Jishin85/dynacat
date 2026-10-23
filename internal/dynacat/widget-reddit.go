@@ -264,7 +264,7 @@ func (widget *redditWidget) fetchSubredditPosts() (forumPostList, error) {
 		return nil, err
 	}
 
-	request.Header = headers.Clone()
+	request.Header = headers
 
 	// The guest token is only sent to Reddit over HTTPS, never to a request-url-template host.
 	if !app.enabled && request.URL.Scheme == "https" && isRedditHost(request.URL.Hostname()) {

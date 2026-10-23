@@ -329,7 +329,6 @@ begin
   Result := '';
 end;
 
-// The config has no pages, so Dynacat opens its first run setup page to create them.
 procedure AddCommand(var Commands: String; Command: String);
 begin
   if Commands <> '' then
@@ -347,13 +346,6 @@ begin
     Result := ShellExec('runas', ExpandConstant('{cmd}'), '/c ' + Commands, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-function GetFirewallPort(): String;
-begin
-  Result := '';
-  if WizardIsTaskSelected('firewall') then
-    Result := GetPort('');
-end;
-
 // The firewall rule and event log source are machine wide, so only these steps ask for admin rights.
 procedure RunElevatedSetup();
 var
@@ -369,7 +361,9 @@ begin
 
   if not RegQueryStringValue(HKCU, DynacatKey, 'FirewallPort', PrevFirewallPort) then
     PrevFirewallPort := '';
-  FirewallPort := GetFirewallPort();
+  FirewallPort := '';
+  if WizardIsTaskSelected('firewall') then
+    FirewallPort := GetPort('');
   if FirewallPort <> PrevFirewallPort then
   begin
     AddCommand(Commands, 'netsh advfirewall firewall delete rule name="Dynacat"');

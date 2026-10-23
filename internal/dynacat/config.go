@@ -2,6 +2,7 @@ package dynacat
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"html/template"
@@ -157,10 +158,7 @@ func (p *page) normalizeKeyBind() {
 }
 
 func (c *config) assetsPath() string {
-	if c.Server.AssetsPath == "" {
-		return "/app/assets"
-	}
-	return c.Server.AssetsPath
+	return cmp.Or(c.Server.AssetsPath, "/app/assets")
 }
 
 func newConfigFromYAML(contents []byte) (*config, error) {
@@ -233,11 +231,17 @@ func yamlCommentIndex(line []byte, quote *byte) int {
 			}
 		case c == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t'):
 			return i
-		case (c == '"' || c == '\'') && (i == 0 || strings.IndexByte(" \t[{,", line[i-1]) >= 0):
+		case (c == '"' || c == '\'') && (i == 0 || strings.IndexByte(" \t[{,", line[i-1]) >= 0) && yamlQuoteOpensScalar(line[:i]):
 			*quote = c
 		}
 	}
 	return len(line)
+}
+
+// A quote only opens a scalar at the start of a value, not mid plain scalar like Rock 'n roll.
+func yamlQuoteOpensScalar(before []byte) bool {
+	before = bytes.TrimRight(before, " \t")
+	return len(before) == 0 || strings.IndexByte(":-[{,", before[len(before)-1]) >= 0
 }
 
 func expandConfigVariables(contents []byte, allowTypedVariables bool) ([]byte, error) {

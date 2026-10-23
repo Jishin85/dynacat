@@ -482,13 +482,7 @@ func (a *application) handleLogoutRequest(w http.ResponseWriter, r *http.Request
 	}
 
 	loggedOutURL := a.Config.Server.BaseURL + "/login?logged-out=1"
-
-	if providerURL := a.oidcProviderLogoutURL(session, loggedOutURL); providerURL != "" {
-		http.Redirect(w, r, providerURL, http.StatusSeeOther)
-		return
-	}
-
-	http.Redirect(w, r, loggedOutURL, http.StatusSeeOther)
+	http.Redirect(w, r, orDefault(a.oidcProviderLogoutURL(session, loggedOutURL), loggedOutURL), http.StatusSeeOther)
 }
 
 // Ends the session at the provider too, otherwise auto-redirect-oidc would sign the user straight back in.

@@ -375,7 +375,7 @@ function setupSearchBoxes() {
             }));
             if (widget.dataset.restrictedTargetsWidgetId) {
                 const targetKey = (t) => t.kind + "\0" + t.title + "\0" + t.url;
-                fetch("/api/search/" + encodeURIComponent(widget.dataset.restrictedTargetsWidgetId) + "/targets")
+                fetch(pageData.baseURL + "/api/search/" + encodeURIComponent(widget.dataset.restrictedTargetsWidgetId) + "/targets")
                     .then((r) => r.ok ? r.json() : [])
                     .then((data) => {
                         const known = new Set(targets.map(targetKey));
@@ -559,7 +559,7 @@ function setupSearchBoxes() {
                 }
 
                 const provider = widget.dataset.autocompleteProvider || "duckduckgo";
-                let suggestionsUrl = "/api/search/autocomplete?q=" + encodeURIComponent(query) + "&provider=" + encodeURIComponent(provider);
+                let suggestionsUrl = pageData.baseURL + "/api/search/autocomplete?q=" + encodeURIComponent(query) + "&provider=" + encodeURIComponent(provider);
                 if (provider === "custom" && widget.dataset.autocompleteWidgetId) {
                     suggestionsUrl += "&widgetId=" + encodeURIComponent(widget.dataset.autocompleteWidgetId);
                 }
