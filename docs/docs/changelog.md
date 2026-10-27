@@ -1,5 +1,7 @@
-# Changes for 3.0.2
+# Changes for 3.0.3
 - Calendar release preview popovers now color each release's title and type icon by its own state (`available`, `released`, `upcoming`) when `show-release-state` is enabled
+
+# Changes for 3.0.2
 - Fixed a bug where users were randomly logged out after a config reload -> https://github.com/Panonim/dynacat/issues/174
 - Fixed `secureImageURL` in `custom-api` never refreshing cached images, they are now re-downloaded after the widget `cache` duration -> https://github.com/Panonim/dynacat/issues/176
 - Added support for passwordless Pi-hole v6 instances in `dns-stats` -> https://github.com/Panonim/dynacat/issues/177
